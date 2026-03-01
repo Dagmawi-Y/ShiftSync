@@ -1,3 +1,3 @@
 # ShiftSync
 
-Employee Shift Management System for Coastal Eats.
+Multi-Location Staff Scheduling Platform for Coastal Eats.
