@@ -11,3 +11,262 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+// --------------------------------
+// ENUMS
+// --------------------------------
+
+enum Role {
+  ADMIN
+  MANAGER
+  STAFF
+}
+
+enum Skill {
+  BARTENDER
+  LINE_COOK
+  SERVER
+  HOST
+}
+
+enum SwapStatus {
+  PENDING_STAFF // waiting for Staff B to accept
+  PENDING_MANAGER // Staff B accepted, waiting for manager
+  APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+enum NotificationType {
+  SHIFT_ASSIGNED
+  SHIFT_CHANGED
+  SCHEDULE_PUBLISHED
+  SWAP_REQUESTED
+  SWAP_ACCEPTED
+  SWAP_REJECTED
+  SWAP_APPROVED
+  SWAP_CANCELLED
+  DROP_REQUESTED
+  DROP_CLAIMED
+  OVERTIME_WARNING
+}
+
+// --------------------------------
+// CORE USER & PROFILE
+// --------------------------------
+
+model Profile {
+  id        String   @id // matches Supabase auth.users id exactly
+  email     String   @unique
+  name      String
+  role      Role
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // relations
+  managedLocations LocationManager[]
+  certifications   StaffCertification[]
+  skills           StaffSkill[]
+  availability     Availability[]
+  assignments      ShiftAssignment[]
+  swapsInitiated   SwapRequest[]        @relation("SwapInitiator")
+  swapsReceived    SwapRequest[]        @relation("SwapReceiver")
+  notifications    Notification[]
+  auditLogs        AuditLog[]
+  desiredHours     Int? // informational only, surfaces in fairness analytics
+}
+
+// --------------------------------
+// LOCATIONS
+// --------------------------------
+
+model Location {
+  id        String   @id @default(cuid())
+  name      String
+  address   String
+  timezone  String // e.g. "America/Los_Angeles", "America/New_York"
+  createdAt DateTime @default(now())
+
+  // relations
+  managers       LocationManager[]
+  certifications StaffCertification[]
+  shifts         Shift[]
+}
+
+// which managers run which locations (many-to-many)
+model LocationManager {
+  profileId  String
+  locationId String
+  assignedAt DateTime @default(now())
+
+  profile  Profile  @relation(fields: [profileId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+
+  @@id([profileId, locationId])
+}
+
+// --------------------------------
+// STAFF CERTIFICATIONS & SKILLS
+// --------------------------------
+
+// which staff are certified to work at which locations
+model StaffCertification {
+  id            String    @id @default(cuid())
+  profileId     String
+  locationId    String
+  certifiedAt   DateTime  @default(now())
+  decertifiedAt DateTime? // null means currently active — soft delete pattern
+
+  profile  Profile  @relation(fields: [profileId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+
+  @@unique([profileId, locationId])
+}
+
+// which skills a staff member has
+model StaffSkill {
+  profileId String
+  skill     Skill
+
+  profile Profile @relation(fields: [profileId], references: [id])
+
+  @@id([profileId, skill])
+}
+
+// --------------------------------
+// AVAILABILITY
+// --------------------------------
+
+// Recurring weekly availability OR one-off exceptions
+model Availability {
+  id        String @id @default(cuid())
+  profileId String
+
+  // for recurring: 0 = Sunday, 6 = Saturday
+  // null means this is a one-off exception
+  dayOfWeek Int?
+
+  // for one-off exceptions: specific date
+  specificDate DateTime?
+
+  startTime   String // "09:00" — stored as HH:mm in the staff member's local time
+  endTime     String // "17:00"
+  isAvailable Boolean @default(true) // false = exception where they're unavailable
+
+  createdAt DateTime @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id])
+}
+
+// --------------------------------
+// SHIFTS
+// --------------------------------
+
+model Shift {
+  id            String @id @default(cuid())
+  locationId    String
+  requiredSkill Skill
+  headcount     Int // how many staff needed for this shift
+
+  // stored in UTC always
+  startTime DateTime
+  endTime   DateTime
+
+  isPublished Boolean   @default(false)
+  publishedAt DateTime?
+
+  // premium shift tracking (Fri/Sat evenings)
+  isPremium Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  location     Location          @relation(fields: [locationId], references: [id])
+  assignments  ShiftAssignment[]
+  swapRequests SwapRequest[]
+  auditLogs    AuditLog[]
+}
+
+// --------------------------------
+// ASSIGNMENTS
+// --------------------------------
+
+model ShiftAssignment {
+  id         String   @id @default(cuid())
+  shiftId    String
+  profileId  String
+  assignedAt DateTime @default(now())
+  assignedBy String // profileId of the manager who made the assignment
+
+  shift   Shift   @relation(fields: [shiftId], references: [id])
+  profile Profile @relation(fields: [profileId], references: [id])
+
+  // prevents double booking at DB level
+  @@unique([shiftId, profileId])
+}
+
+// --------------------------------
+// SWAP REQUESTS
+// --------------------------------
+
+model SwapRequest {
+  id          String     @id @default(cuid())
+  shiftId     String
+  initiatorId String // Staff A — wants to swap or drop
+  receiverId  String? // Staff B — null if this is a drop request
+  status      SwapStatus @default(PENDING_STAFF)
+
+  isDrop Boolean @default(false) // true = drop request, false = swap
+
+  // reason tracking
+  initiatorNote String?
+  managerNote   String?
+
+  // timestamps for expiry logic
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime // for drops: shift start - 24hrs
+  resolvedAt DateTime?
+
+  shift     Shift    @relation(fields: [shiftId], references: [id])
+  initiator Profile  @relation("SwapInitiator", fields: [initiatorId], references: [id])
+  receiver  Profile? @relation("SwapReceiver", fields: [receiverId], references: [id])
+}
+
+// --------------------------------
+// NOTIFICATIONS
+// --------------------------------
+
+model Notification {
+  id        String           @id @default(cuid())
+  profileId String
+  type      NotificationType
+  title     String
+  body      String
+  isRead    Boolean          @default(false)
+
+  // optional link to the relevant entity
+  shiftId String?
+  swapId  String?
+
+  createdAt DateTime @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id])
+}
+
+// --------------------------------
+// AUDIT LOG
+// --------------------------------
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  shiftId   String?
+  actorId   String // who made the change
+  action    String // e.g. "SHIFT_CREATED", "ASSIGNMENT_ADDED", "SWAP_APPROVED"
+  before    Json? // state before change
+  after     Json? // state after change
+  createdAt DateTime @default(now())
+
+  shift Shift?  @relation(fields: [shiftId], references: [id])
+  actor Profile @relation(fields: [actorId], references: [id])
+}
