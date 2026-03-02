@@ -11,6 +11,11 @@ export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
   title: "ShiftSync | Workforce Management",
   description: "Intelligent shift scheduling and team management platform.",
+  icons: {
+    icon: "/shiftsync-logo-nobg.png",
+    shortcut: "/shiftsync-logo-nobg.png",
+    apple: "/shiftsync-logo-nobg.png",
+  },
 };
 
 const geistSans = Geist({

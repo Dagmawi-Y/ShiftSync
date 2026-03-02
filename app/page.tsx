@@ -1,13 +1,15 @@
 import Link from "next/link";
+import { SiteLogo } from "@/components/site-logo";
 
 export default function Home() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center bg-background p-6">
       <div className="max-w-3xl w-full space-y-8 text-center bg-card p-12 rounded-2xl border shadow-sm transition-all hover:shadow-md">
         <div className="space-y-4">
-          <h1 className="text-5xl font-extrabold tracking-tight bg-linear-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">
-            ShiftSync
-          </h1>
+          <div className="flex justify-center">
+            <SiteLogo withText linked={false} className="text-5xl" />
+          </div>
+          <h1 className="sr-only">ShiftSync</h1>
           <p className="text-xl text-muted-foreground max-w-lg mx-auto leading-relaxed">
             The intelligent workforce management platform for modern teams.
           </p>
