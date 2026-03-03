@@ -23,6 +23,12 @@
 
 ---
 
+## System Architecture
+
+![ShiftSync Architecture](/public/shiftsync-arch.webp)
+
+---
+
 ## Features
 
 ### Scheduling
