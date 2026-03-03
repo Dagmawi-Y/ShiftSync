@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -11,6 +11,8 @@ import {
   Star,
   Trash2,
   Loader2,
+  ScrollText,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { formatSkillLabel, getSkillColor, type ShiftData } from "./shift-card";
 import { StaffAssignmentRow } from "./staff-assignment-row";
 import { useConflictDetection } from "@/lib/hooks/useConflictDetection";
+import { formatInTimezone, formatTimeRange } from "@/lib/timezone";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -28,6 +31,13 @@ interface StaffMember {
   email: string;
   skills: { skill: string }[];
   certifications: { locationId: string }[];
+}
+
+interface AuditEntry {
+  id: string;
+  action: string;
+  createdAt: string;
+  actor: { name: string; role: string };
 }
 
 interface ShiftDetailPanelProps {
@@ -48,6 +58,8 @@ export function ShiftDetailPanel({
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [loadingStaff, setLoadingStaff] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
 
   // Track staff IDs currently visible for conflict detection
   const watchedStaffIds = staff.map((s) => s.id);
@@ -74,6 +86,11 @@ export function ShiftDetailPanel({
     if (shift) {
       fetchStaff();
       clearConflicts();
+      // Fetch audit logs for this shift
+      fetch(`/api/audit?shiftId=${shift.id}`)
+        .then((r) => r.json())
+        .then((j) => setAuditLogs(j.data ?? []))
+        .catch(() => {});
     }
   }, [shift?.id]);
 
@@ -233,6 +250,51 @@ export function ShiftDetailPanel({
                 )}
               </div>
 
+              {/* Audit / History section */}
+              {auditLogs.length > 0 && (
+                <div className="px-5 py-3 border-t">
+                  <button
+                    onClick={() => setShowHistory(!showHistory)}
+                    className="flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors w-full"
+                  >
+                    <ScrollText className="size-3.5" />
+                    History ({auditLogs.length})
+                    <ChevronDown
+                      className={cn(
+                        "size-3.5 ml-auto transition-transform",
+                        showHistory && "rotate-180"
+                      )}
+                    />
+                  </button>
+                  <AnimatePresence>
+                    {showHistory && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="space-y-2 pt-2 max-h-40 overflow-y-auto">
+                          {auditLogs.map((log) => (
+                            <div key={log.id} className="text-xs text-muted-foreground">
+                              <span className="font-medium text-foreground">
+                                {log.actor.name}
+                              </span>{" "}
+                              {log.action.replace(/_/g, " ").toLowerCase()}{" "}
+                              <span className="text-muted-foreground/60">
+                                {formatDistanceToNow(new Date(log.createdAt), {
+                                  addSuffix: true,
+                                })}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
+
               {/* Footer actions */}
               <div className="px-5 py-3 border-t flex items-center justify-between">
                 <Button
@@ -262,8 +324,9 @@ export function ShiftDetailPanel({
 
 function ShiftInfoRow({ shift }: { shift: ShiftData }) {
   const colors = getSkillColor(shift.requiredSkill);
-  const date = format(new Date(shift.startTime), "EEEE, MMM d");
-  const timeRange = `${format(new Date(shift.startTime), "h:mm a")} – ${format(new Date(shift.endTime), "h:mm a")}`;
+  const tz = shift.location.timezone ?? "UTC";
+  const date = formatInTimezone(shift.startTime, tz, "EEEE, MMM d");
+  const timeRange = formatTimeRange(shift.startTime, shift.endTime, tz);
   const locationName =
     shift.location.name.split("—")[1]?.trim() ?? shift.location.name;
 

@@ -19,6 +19,7 @@ interface PublishBarProps {
 
 export function PublishBar({ shifts, onPublished }: PublishBarProps) {
   const [publishing, setPublishing] = useState(false);
+  const [unpublishing, setUnpublishing] = useState(false);
 
   const draftShifts = shifts.filter((s) => !s.isPublished);
   const publishedShifts = shifts.filter((s) => s.isPublished);
@@ -34,7 +35,6 @@ export function PublishBar({ shifts, onPublished }: PublishBarProps) {
     if (draftShifts.length === 0) return;
     setPublishing(true);
     try {
-      // Publish all draft shifts in parallel
       const results = await Promise.allSettled(
         draftShifts.map((shift) =>
           fetch(`/api/shifts/${shift.id}`, {
@@ -63,9 +63,41 @@ export function PublishBar({ shifts, onPublished }: PublishBarProps) {
     }
   };
 
+  const handleUnpublishAll = async () => {
+    if (publishedShifts.length === 0) return;
+    setUnpublishing(true);
+    try {
+      const results = await Promise.allSettled(
+        publishedShifts.map((shift) =>
+          fetch(`/api/shifts/${shift.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ isPublished: false }),
+          })
+        )
+      );
+
+      const succeeded = results.filter(
+        (r) => r.status === "fulfilled"
+      ).length;
+      const failed = results.filter((r) => r.status === "rejected").length;
+
+      if (failed > 0) {
+        toast.warning(`Unpublished ${succeeded} shifts, ${failed} failed`);
+      } else {
+        toast.success(`Unpublished ${succeeded} shift${succeeded > 1 ? "s" : ""}`);
+      }
+      onPublished();
+    } catch {
+      toast.error("Failed to unpublish shifts");
+    } finally {
+      setUnpublishing(false);
+    }
+  };
+
   return (
     <AnimatePresence>
-      {draftShifts.length > 0 && (
+      {(draftShifts.length > 0 || publishedShifts.length > 0) && (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -92,19 +124,38 @@ export function PublishBar({ shifts, onPublished }: PublishBarProps) {
             )}
           </div>
 
-          <Button
-            size="sm"
-            onClick={handlePublishAll}
-            disabled={publishing}
-          >
-            {publishing ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Send className="size-3.5" />
+          <div className="flex items-center gap-2">
+            {publishedShifts.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleUnpublishAll}
+                disabled={unpublishing}
+              >
+                {unpublishing ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <EyeOff className="size-3.5" />
+                )}
+                Unpublish
+              </Button>
             )}
-            Publish {draftShifts.length} Shift
-            {draftShifts.length !== 1 && "s"}
-          </Button>
+            {draftShifts.length > 0 && (
+              <Button
+                size="sm"
+                onClick={handlePublishAll}
+                disabled={publishing}
+              >
+                {publishing ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Send className="size-3.5" />
+                )}
+                Publish {draftShifts.length} Shift
+                {draftShifts.length !== 1 && "s"}
+              </Button>
+            )}
+          </div>
         </motion.div>
       )}
     </AnimatePresence>

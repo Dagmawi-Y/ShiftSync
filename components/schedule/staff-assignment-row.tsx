@@ -15,6 +15,16 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/tooltip";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -60,6 +70,8 @@ export function StaffAssignmentRow({
   } | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [isOverriding, setIsOverriding] = useState(false);
+  const [showOverrideDialog, setShowOverrideDialog] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
 
   const hasConflict = conflictStaffIds?.has(staff.id);
   const showAsAssigned = isAssigned || optimisticAssigned;
@@ -85,10 +97,28 @@ export function StaffAssignmentRow({
 
   const handleOverride = async () => {
     if (!constraint) return;
+    // For 7th consecutive day or other overridable rules, prompt for a reason
+    if (constraint.rule === "SEVENTH_CONSECUTIVE_DAY" || constraint.rule === "SIXTH_CONSECUTIVE_DAY") {
+      setShowOverrideDialog(true);
+      return;
+    }
     setIsOverriding(true);
     try {
       await onAssign(staff.id, [constraint.rule], "Manager override");
       setConstraint(null);
+    } finally {
+      setIsOverriding(false);
+    }
+  };
+
+  const handleConfirmOverride = async () => {
+    if (!constraint || !overrideReason.trim()) return;
+    setIsOverriding(true);
+    setShowOverrideDialog(false);
+    try {
+      await onAssign(staff.id, [constraint.rule], overrideReason.trim());
+      setConstraint(null);
+      setOverrideReason("");
     } finally {
       setIsOverriding(false);
     }
@@ -209,6 +239,33 @@ export function StaffAssignmentRow({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Override reason dialog */}
+      <Dialog open={showOverrideDialog} onOpenChange={setShowOverrideDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Override Required</DialogTitle>
+            <DialogDescription>{constraint?.message}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Label htmlFor="overrideReason">Reason (required)</Label>
+            <Input
+              id="overrideReason"
+              placeholder="Document why this override is necessary…"
+              value={overrideReason}
+              onChange={(e) => setOverrideReason(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowOverrideDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmOverride} disabled={!overrideReason.trim() || isOverriding}>
+              Override
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -45,6 +45,7 @@ import {
   formatSkillLabel,
 } from "@/components/schedule/shift-card";
 import { cn } from "@/lib/utils";
+import { useRealtimeSubscription } from "@/lib/hooks/useRealtimeSubscription";
 
 interface SwapRecord {
   id: string;
@@ -111,6 +112,13 @@ export default function ManagerSwapsPage() {
   useEffect(() => {
     fetchSwaps();
   }, [fetchSwaps]);
+
+  // Real-time: auto-refresh when any SwapRequest changes
+  useRealtimeSubscription({
+    table: "SwapRequest",
+    event: "*",
+    onchange: () => fetchSwaps(),
+  });
 
   // Optionally filter by selected location client-side (API returns all managed locations)
   const filtered = useMemo(() => {

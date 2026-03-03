@@ -74,6 +74,7 @@ model Profile {
   swapsInitiated   SwapRequest[]        @relation("SwapInitiator")
   swapsReceived    SwapRequest[]        @relation("SwapReceiver")
   notifications    Notification[]
+  notificationPref NotificationPreference?
   auditLogs        AuditLog[]
   desiredHours     Int? // informational only, surfaces in fairness analytics
 }
@@ -253,6 +254,38 @@ model Notification {
   createdAt DateTime @default(now())
 
   profile Profile @relation(fields: [profileId], references: [id])
+}
+
+// --------------------------------
+// NOTIFICATION PREFERENCES
+// --------------------------------
+
+model NotificationPreference {
+  id        String  @id @default(cuid())
+  profileId String  @unique
+  inApp     Boolean @default(true)
+  email     Boolean @default(false) // simulated email delivery
+
+  // Granular toggles — all default to true
+  shiftAssigned    Boolean @default(true)
+  shiftChanged     Boolean @default(true)
+  schedulePublished Boolean @default(true)
+  swapUpdates      Boolean @default(true)
+  overtimeWarnings Boolean @default(true)
+
+  profile Profile @relation(fields: [profileId], references: [id])
+}
+
+// --------------------------------
+// EMAIL LOG (simulated email delivery)
+// --------------------------------
+
+model EmailLog {
+  id        String   @id @default(cuid())
+  to        String   // email address
+  subject   String
+  body      String
+  sentAt    DateTime @default(now())
 }
 
 // --------------------------------

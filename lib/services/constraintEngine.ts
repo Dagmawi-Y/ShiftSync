@@ -295,95 +295,142 @@ async function checkAvailability(
 ): Promise<ConstraintResult> {
   // Get the day of week in the LOCATION's timezone (0 = Sunday)
   const zonedStart = toZonedTime(shiftStart, locationTimezone);
+  const zonedEnd = toZonedTime(shiftEnd, locationTimezone);
   const dayOfWeek = zonedStart.getDay();
   const shiftDateStr = format(zonedStart, "yyyy-MM-dd");
+
+  // Does the shift span midnight in the location's timezone?
+  const endDateStr = format(zonedEnd, "yyyy-MM-dd");
+  const spansMidnight = shiftDateStr !== endDateStr;
 
   const availability = await prisma.availability.findMany({
     where: { profileId },
   });
 
-  // Check for a specific date exception first (overrides recurring)
-  const exceptionForDate = availability.find(
-    (a) =>
-      a.specificDate !== null &&
-      format(a.specificDate, "yyyy-MM-dd") === shiftDateStr
-  );
+  // ── Helper: check a single day portion against availability ──
+  type FailResult = Extract<ConstraintResult, { valid: false }>;
+  const checkDay = (
+    zonedDate: Date,
+    dateStr: string,
+    dow: number,
+    segStart: Date,
+    segEnd: Date,
+    label: string
+  ): FailResult | null => {
+    // Check for a specific date exception first (overrides recurring)
+    const exceptionForDate = availability.find(
+      (a) =>
+        a.specificDate !== null &&
+        format(a.specificDate, "yyyy-MM-dd") === dateStr
+    );
 
-  if (exceptionForDate) {
-    if (!exceptionForDate.isAvailable) {
-      const suggestions = await getAlternativeSuggestions(shiftId, profileId);
+    if (exceptionForDate) {
+      if (!exceptionForDate.isAvailable) {
+        return {
+          valid: false,
+          severity: "BLOCK",
+          rule: "UNAVAILABLE",
+          message: `This staff member has marked themselves unavailable on ${format(zonedDate, "MMMM d")}${label}.`,
+          suggestions: [], // filled later
+          canOverride: false,
+        };
+      }
+      const availStart = availabilityTimeToUTC(
+        exceptionForDate.startTime,
+        segStart,
+        locationTimezone
+      );
+      const availEnd = availabilityTimeToUTC(
+        exceptionForDate.endTime,
+        segStart,
+        locationTimezone
+      );
+      if (segStart < availStart || segEnd > availEnd) {
+        return {
+          valid: false,
+          severity: "BLOCK",
+          rule: "UNAVAILABLE",
+          message: `This staff member is only available ${exceptionForDate.startTime}–${exceptionForDate.endTime} on ${format(zonedDate, "MMMM d")}${label}.`,
+          suggestions: [],
+          canOverride: false,
+        };
+      }
+      return null; // ok
+    }
+
+    // Recurring
+    const recurringForDay = availability.find(
+      (a) => a.dayOfWeek === dow && a.specificDate === null
+    );
+
+    if (!recurringForDay || !recurringForDay.isAvailable) {
       return {
         valid: false,
         severity: "BLOCK",
         rule: "UNAVAILABLE",
-        message: `This staff member has marked themselves unavailable on ${format(zonedStart, "MMMM d")}.`,
-        suggestions,
+        message: `This staff member has not indicated availability on ${format(zonedDate, "EEEE")}s${label}.`,
+        suggestions: [],
         canOverride: false,
       };
     }
-    // They have a specific availability for this date — check the window
+
     const availStart = availabilityTimeToUTC(
-      exceptionForDate.startTime,
-      shiftStart,
+      recurringForDay.startTime,
+      segStart,
       locationTimezone
     );
     const availEnd = availabilityTimeToUTC(
-      exceptionForDate.endTime,
-      shiftStart,
+      recurringForDay.endTime,
+      segStart,
       locationTimezone
     );
-    if (shiftStart < availStart || shiftEnd > availEnd) {
-      const suggestions = await getAlternativeSuggestions(shiftId, profileId);
+
+    if (segStart < availStart || segEnd > availEnd) {
       return {
         valid: false,
         severity: "BLOCK",
         rule: "UNAVAILABLE",
-        message: `This staff member is only available ${exceptionForDate.startTime}–${exceptionForDate.endTime} on ${format(zonedStart, "MMMM d")}.`,
-        suggestions,
+        message: `This staff member is only available ${recurringForDay.startTime}–${recurringForDay.endTime} on ${format(zonedDate, "EEEE")}s${label}. The shift falls outside this window.`,
+        suggestions: [],
         canOverride: false,
       };
     }
-    return { valid: true };
+
+    return null; // passes
+  };
+
+  // ── Check start day ──
+  const startResult = checkDay(
+    zonedStart,
+    shiftDateStr,
+    dayOfWeek,
+    shiftStart,
+    spansMidnight
+      ? parseISO(`${shiftDateStr}T23:59:59`) // until midnight
+      : shiftEnd,
+    spansMidnight ? " (overnight shift start)" : ""
+  );
+  if (startResult) {
+    startResult.suggestions = await getAlternativeSuggestions(shiftId, profileId);
+    return startResult;
   }
 
-  // Fall back to recurring weekly availability
-  const recurringForDay = availability.find(
-    (a) => a.dayOfWeek === dayOfWeek && a.specificDate === null
-  );
-
-  if (!recurringForDay || !recurringForDay.isAvailable) {
-    const suggestions = await getAlternativeSuggestions(shiftId, profileId);
-    return {
-      valid: false,
-      severity: "BLOCK",
-      rule: "UNAVAILABLE",
-      message: `This staff member has not indicated availability on ${format(zonedStart, "EEEE")}s.`,
-      suggestions,
-      canOverride: false,
-    };
-  }
-
-  const availStart = availabilityTimeToUTC(
-    recurringForDay.startTime,
-    shiftStart,
-    locationTimezone
-  );
-  const availEnd = availabilityTimeToUTC(
-    recurringForDay.endTime,
-    shiftStart,
-    locationTimezone
-  );
-
-  if (shiftStart < availStart || shiftEnd > availEnd) {
-    const suggestions = await getAlternativeSuggestions(shiftId, profileId);
-    return {
-      valid: false,
-      severity: "BLOCK",
-      rule: "UNAVAILABLE",
-      message: `This staff member is only available ${recurringForDay.startTime}–${recurringForDay.endTime} on ${format(zonedStart, "EEEE")}s. The shift falls outside this window.`,
-      suggestions,
-      canOverride: false,
-    };
+  // ── Check next day if overnight ──
+  if (spansMidnight) {
+    const nextDow = zonedEnd.getDay();
+    const midnightNext = parseISO(`${endDateStr}T00:00:00`);
+    const endResult = checkDay(
+      zonedEnd,
+      endDateStr,
+      nextDow,
+      midnightNext,
+      shiftEnd,
+      " (overnight shift end)"
+    );
+    if (endResult) {
+      endResult.suggestions = await getAlternativeSuggestions(shiftId, profileId);
+      return endResult;
+    }
   }
 
   return { valid: true };
@@ -398,47 +445,57 @@ async function checkDailyHours(
   const WARN_HOURS = 8;
   const BLOCK_HOURS = 12;
 
-  // Find all assignments on the same calendar day
-  const dayStart = startOfDay(shiftStart);
-  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
-
-  const sameDayAssignments = await prisma.shiftAssignment.findMany({
-    where: {
-      profileId,
-      shift: { startTime: { gte: dayStart, lt: dayEnd } },
-    },
-    include: { shift: true },
-  });
-
-  const existingHours = sameDayAssignments.reduce(
-    (sum, a) =>
-      sum + differenceInHours(a.shift.endTime, a.shift.startTime),
-    0
-  );
   const newShiftHours = differenceInHours(shiftEnd, shiftStart);
-  const totalHours = existingHours + newShiftHours;
 
-  if (totalHours > BLOCK_HOURS) {
-    const suggestions = await getAlternativeSuggestions(shiftId, profileId);
-    return {
-      valid: false,
-      severity: "BLOCK",
-      rule: "DAILY_HOURS_EXCEEDED",
-      message: `This assignment would bring this staff member to ${totalHours} hours in a single day, exceeding the 12-hour maximum.`,
-      suggestions,
-      canOverride: false,
-    };
-  }
+  // Check every calendar day the shift touches (handles overnight shifts)
+  const days = eachDayOfInterval({ start: shiftStart, end: shiftEnd });
+  // eachDayOfInterval may give only one entry if start==end day, but for
+  // overnight shifts it gives both days.
+  for (const day of days) {
+    const dayStart = startOfDay(day);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
 
-  if (totalHours > WARN_HOURS) {
-    return {
-      valid: false,
-      severity: "WARN",
-      rule: "DAILY_HOURS_EXCEEDED",
-      message: `This assignment would bring this staff member to ${totalHours} hours today, exceeding 8 hours. Consider redistributing.`,
-      suggestions: [],
-      canOverride: true,
-    };
+    const sameDayAssignments = await prisma.shiftAssignment.findMany({
+      where: {
+        profileId,
+        shift: {
+          // Any shift that overlaps this calendar day
+          startTime: { lt: dayEnd },
+          endTime: { gt: dayStart },
+        },
+      },
+      include: { shift: true },
+    });
+
+    const existingHours = sameDayAssignments.reduce(
+      (sum, a) =>
+        sum + differenceInHours(a.shift.endTime, a.shift.startTime),
+      0
+    );
+    const totalHours = existingHours + newShiftHours;
+
+    if (totalHours > BLOCK_HOURS) {
+      const suggestions = await getAlternativeSuggestions(shiftId, profileId);
+      return {
+        valid: false,
+        severity: "BLOCK",
+        rule: "DAILY_HOURS_EXCEEDED",
+        message: `This assignment would bring this staff member to ${totalHours} hours on ${format(dayStart, "MMM d")}, exceeding the 12-hour maximum.`,
+        suggestions,
+        canOverride: false,
+      };
+    }
+
+    if (totalHours > WARN_HOURS) {
+      return {
+        valid: false,
+        severity: "WARN",
+        rule: "DAILY_HOURS_EXCEEDED",
+        message: `This assignment would bring this staff member to ${totalHours} hours on ${format(dayStart, "MMM d")}, exceeding 8 hours. Consider redistributing.`,
+        suggestions: [],
+        canOverride: true,
+      };
+    }
   }
 
   return { valid: true };

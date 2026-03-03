@@ -5,6 +5,7 @@ import { Users, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
+import { formatTimeRange } from "@/lib/timezone";
 
 // ─── Skill color map ─────────────────────────────────────
 
@@ -81,7 +82,8 @@ export function ShiftCard({ shift, isHighlighted, onClick, staggerIndex = 0 }: S
   const colors = getSkillColor(shift.requiredSkill);
   const assignedCount = shift.assignments.length;
   const isFilled = assignedCount >= shift.headcount;
-  const timeRange = `${format(new Date(shift.startTime), "h:mm a")} – ${format(new Date(shift.endTime), "h:mm a")}`;
+  const tz = shift.location.timezone ?? "UTC";
+  const timeRange = formatTimeRange(shift.startTime, shift.endTime, tz);
 
   return (
     <motion.button

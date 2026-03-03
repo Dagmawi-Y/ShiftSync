@@ -12,6 +12,7 @@ import { getSkillColor, formatSkillLabel } from "@/components/schedule/shift-car
 import { format } from "date-fns";
 import { ArrowDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { useRealtimeSubscription } from "@/lib/hooks/useRealtimeSubscription";
 
 interface ShiftForDrop {
   id: string;
@@ -46,6 +47,13 @@ export default function StaffSwapsPage() {
   useEffect(() => {
     fetchRequests();
   }, [fetchRequests]);
+
+  // Real-time: auto-refresh when any SwapRequest changes
+  useRealtimeSubscription({
+    table: "SwapRequest",
+    event: "*",
+    onchange: () => fetchRequests(),
+  });
 
   const handleRefresh = useCallback(() => {
     setRequestsLoading(true);

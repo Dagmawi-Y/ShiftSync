@@ -13,6 +13,7 @@ import {
   BarChart3,
   ScrollText,
   Clock,
+  Settings,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -76,6 +77,16 @@ function getNavGroups(role: Role): NavGroup[] {
             { label: "Audit Log", href: "/admin/audit", icon: ScrollText },
           ],
         },
+        {
+          label: "Settings",
+          items: [
+            {
+              label: "Notifications",
+              href: "/settings/notifications",
+              icon: Settings,
+            },
+          ],
+        },
       ];
     case "MANAGER":
       return [
@@ -115,6 +126,16 @@ function getNavGroups(role: Role): NavGroup[] {
             },
           ],
         },
+        {
+          label: "Settings",
+          items: [
+            {
+              label: "Notifications",
+              href: "/settings/notifications",
+              icon: Settings,
+            },
+          ],
+        },
       ];
     case "STAFF":
       return [
@@ -138,6 +159,16 @@ function getNavGroups(role: Role): NavGroup[] {
             },
             { label: "Availability", href: "/staff/availability", icon: Clock },
             { label: "Swaps", href: "/staff/swaps", icon: ArrowLeftRight },
+          ],
+        },
+        {
+          label: "Settings",
+          items: [
+            {
+              label: "Notifications",
+              href: "/settings/notifications",
+              icon: Settings,
+            },
           ],
         },
       ];
