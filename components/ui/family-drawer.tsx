@@ -194,7 +194,7 @@ function FamilyDrawerOverlay({ className, onClick }: FamilyDrawerOverlayProps) {
 
   return (
     <Drawer.Overlay
-      className={clsx("fixed inset-0 z-10 bg-black/30", className)}
+      className={clsx("fixed inset-0 z-10 bg-black/30 backdrop-blur-sm", className)}
       onClick={onClick || (() => setView("default"))}
     />
   )
