@@ -1,7 +1,7 @@
 <div align="center">
   <img src="public/shiftsync-logo-nobg.png" alt="ShiftSync" width="100" />
   <h1>ShiftSync</h1>
-  <p>Multi-location staff scheduling platform for Coastal Eats — a restaurant group operating 4 locations across 2 time zones.</p>
+  <p>Multi-location staff scheduling platform for **Coastal Eats** restaurant group.</p>
 </div>
 
 ---
