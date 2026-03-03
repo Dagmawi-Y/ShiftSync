@@ -10,6 +10,21 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+type Role = "ADMIN" | "MANAGER" | "STAFF";
+
+function getDashboardPath(role: Role): string {
+  switch (role) {
+    case "ADMIN":
+      return "/admin/dashboard";
+    case "MANAGER":
+      return "/manager/dashboard";
+    case "STAFF":
+      return "/staff/dashboard";
+    default:
+      return "/";
+  }
+}
+
 export function LoginForm({
   className,
   ...props
@@ -33,7 +48,15 @@ export function LoginForm({
         password,
       });
       if (error) throw error;
-      router.push("/");
+
+      // Fetch role from profile and redirect to role-specific dashboard
+      const res = await fetch("/api/auth/me");
+      if (res.ok) {
+        const { data } = await res.json();
+        router.push(getDashboardPath(data.role));
+      } else {
+        router.push("/");
+      }
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "An error occurred");
     } finally {
@@ -130,30 +153,11 @@ export function LoginForm({
         </Button>
       </form>
 
-      {/* Divider */}
-      <div className="relative">
-        <div className="absolute inset-0 flex items-center">
-          <span className="w-full border-t" />
-        </div>
-        <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-background px-2 text-muted-foreground/60">
-            New to ShiftSync?
-          </span>
-        </div>
-      </div>
-
-      <Link
-        href="/sign-up"
-        className="block"
-      >
-        <Button
-          variant="outline"
-          className="w-full h-10 font-medium"
-          type="button"
-        >
-          Create an account
-        </Button>
-      </Link>
+      {/* Info for invited users */}
+      <p className="text-center text-xs text-muted-foreground/60">
+        Don&apos;t have an account? Contact your administrator to receive an
+        invitation.
+      </p>
     </div>
   );
 }

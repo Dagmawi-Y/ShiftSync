@@ -1,10 +1,7 @@
-import { AuthLayout } from "@/components/auth-layout";
-import { SignUpForm } from "@/components/sign-up-form";
+import { redirect } from "next/navigation";
 
+// Sign-up is no longer available — users are invited by admins/managers.
+// Redirect any old bookmarks to login.
 export default function Page() {
-  return (
-    <AuthLayout>
-      <SignUpForm />
-    </AuthLayout>
-  );
+  redirect("/login");
 }

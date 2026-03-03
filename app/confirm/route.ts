@@ -17,14 +17,16 @@ export async function GET(request: NextRequest) {
       token_hash,
     });
     if (!error) {
-      // redirect user to specified redirect URL or root of app
+      // For invite tokens, redirect to the invite-accept page to set password
+      if (type === "invite") {
+        redirect("/invite-accept");
+      }
+      // Otherwise redirect to the specified URL
       redirect(next);
     } else {
-      // redirect the user to an error page with some instructions
       redirect(`/error?error=${error?.message}`);
     }
   }
 
-  // redirect the user to an error page with some instructions
   redirect(`/error?error=No token hash or type`);
 }

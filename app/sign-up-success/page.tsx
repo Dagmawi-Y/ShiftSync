@@ -11,11 +11,11 @@ export default function Page() {
             <CheckCircle2 className="w-7 h-7 text-secondary" />
           </div>
           <h1 className="text-2xl font-semibold tracking-tight font-display">
-            You&apos;re all set!
+            Account activated
           </h1>
           <p className="text-sm text-muted-foreground leading-relaxed max-w-xs mx-auto">
-            We&apos;ve sent a confirmation link to your email. Please check your
-            inbox and click the link to activate your account.
+            Your account has been successfully set up. You can now sign in with
+            your credentials.
           </p>
         </div>
 
@@ -24,7 +24,7 @@ export default function Page() {
           className="flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          Back to sign in
+          Go to sign in
         </Link>
       </div>
     </AuthLayout>
