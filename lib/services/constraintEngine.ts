@@ -95,6 +95,157 @@ function availabilityTimeToUTC(
 // Fetches qualified alternatives when a check fails
 // ─────────────────────────────────────────────
 
+/**
+ * Lightweight BLOCK-only validation used to pre-vet suggestion candidates.
+ * Returns `true` only when the candidate passes every hard constraint.
+ *
+ * Intentionally does NOT call getAlternativeSuggestions (avoids recursion)
+ * and skips WARN-level rules (suggestions with minor warnings are fine).
+ */
+async function isAssignableToShift(
+  profileId: string,
+  shift: {
+    id: string;
+    startTime: Date;
+    endTime: Date;
+    locationId: string;
+    requiredSkill: Skill;
+    location: { timezone: string };
+  }
+): Promise<boolean> {
+  // 1. Skill
+  const skill = await prisma.staffSkill.findUnique({
+    where: { profileId_skill: { profileId, skill: shift.requiredSkill } },
+  });
+  if (!skill) return false;
+
+  // 2. Certification
+  const cert = await prisma.staffCertification.findUnique({
+    where: { profileId_locationId: { profileId, locationId: shift.locationId } },
+  });
+  if (!cert || cert.decertifiedAt !== null) return false;
+
+  // 3. Already assigned to this shift
+  const existing = await prisma.shiftAssignment.findFirst({
+    where: { profileId, shiftId: shift.id },
+  });
+  if (existing) return false;
+
+  // 4. Double-booking — any overlapping shift
+  const overlapping = await prisma.shiftAssignment.findMany({
+    where: { profileId },
+    include: { shift: true },
+  });
+  for (const a of overlapping) {
+    if (getOverlapMinutes(shift.startTime, shift.endTime, a.shift.startTime, a.shift.endTime) > 0) {
+      return false;
+    }
+  }
+
+  // 5. Rest period (10 hr minimum)
+  const MIN_REST_HOURS = 10;
+  const nearby = await prisma.shiftAssignment.findMany({
+    where: {
+      profileId,
+      shift: {
+        startTime: {
+          gte: subDays(shift.startTime, 1),
+          lte: new Date(shift.endTime.getTime() + 24 * 60 * 60 * 1000),
+        },
+      },
+    },
+    include: { shift: true },
+  });
+  for (const a of nearby) {
+    const restAfter = differenceInHours(shift.startTime, a.shift.endTime);
+    const restBefore = differenceInHours(a.shift.startTime, shift.endTime);
+    if (
+      (restAfter >= 0 && restAfter < MIN_REST_HOURS) ||
+      (restBefore >= 0 && restBefore < MIN_REST_HOURS)
+    ) {
+      return false;
+    }
+  }
+
+  // 6. Availability (both days for overnight shifts)
+  const tz = shift.location.timezone;
+  const zonedStart = toZonedTime(shift.startTime, tz);
+  const zonedEnd = toZonedTime(shift.endTime, tz);
+  const shiftDateStr = format(zonedStart, "yyyy-MM-dd");
+  const endDateStr = format(zonedEnd, "yyyy-MM-dd");
+  const spansMidnight = shiftDateStr !== endDateStr;
+
+  const availability = await prisma.availability.findMany({
+    where: { profileId },
+  });
+
+  // Inner helper: check one calendar day against availability
+  const dayOk = (
+    dow: number,
+    dateStr: string,
+    segStart: Date,
+    segEnd: Date
+  ): boolean => {
+    // Specific-date exception overrides recurring
+    const exception = availability.find(
+      (a) => a.specificDate !== null && format(a.specificDate, "yyyy-MM-dd") === dateStr
+    );
+    if (exception) {
+      if (!exception.isAvailable) return false;
+      const s = availabilityTimeToUTC(exception.startTime, segStart, tz);
+      const e = availabilityTimeToUTC(exception.endTime, segStart, tz);
+      return segStart >= s && segEnd <= e;
+    }
+    // Recurring
+    const rec = availability.find((a) => a.dayOfWeek === dow && a.specificDate === null);
+    if (!rec || !rec.isAvailable) return false;
+    const s = availabilityTimeToUTC(rec.startTime, segStart, tz);
+    const e = availabilityTimeToUTC(rec.endTime, segStart, tz);
+    return segStart >= s && segEnd <= e;
+  };
+
+  const startOk = dayOk(
+    zonedStart.getDay(),
+    shiftDateStr,
+    shift.startTime,
+    spansMidnight ? parseISO(`${shiftDateStr}T23:59:59`) : shift.endTime
+  );
+  if (!startOk) return false;
+
+  if (spansMidnight) {
+    const endOk = dayOk(
+      zonedEnd.getDay(),
+      endDateStr,
+      parseISO(`${endDateStr}T00:00:00`),
+      shift.endTime
+    );
+    if (!endOk) return false;
+  }
+
+  // 7. Daily hours (>12hr block)
+  const BLOCK_HOURS = 12;
+  const newHours = differenceInHours(shift.endTime, shift.startTime);
+  const days = eachDayOfInterval({ start: shift.startTime, end: shift.endTime });
+  for (const day of days) {
+    const dayStart = startOfDay(day);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    const dayAssignments = await prisma.shiftAssignment.findMany({
+      where: {
+        profileId,
+        shift: { startTime: { lt: dayEnd }, endTime: { gt: dayStart } },
+      },
+      include: { shift: true },
+    });
+    const existingHours = dayAssignments.reduce(
+      (sum, a) => sum + differenceInHours(a.shift.endTime, a.shift.startTime),
+      0
+    );
+    if (existingHours + newHours > BLOCK_HOURS) return false;
+  }
+
+  return true;
+}
+
 async function getAlternativeSuggestions(
   shiftId: string,
   excludeProfileId: string
@@ -105,8 +256,9 @@ async function getAlternativeSuggestions(
   });
   if (!shift) return [];
 
-  // Find staff who have the skill AND are certified at this location
-  const qualified = await prisma.profile.findMany({
+  // Cast a wider net — grab up to 15 candidates who match skill + certification.
+  // We'll filter down to truly assignable ones via isAssignableToShift.
+  const candidates = await prisma.profile.findMany({
     where: {
       id: { not: excludeProfileId },
       role: "STAFF",
@@ -123,7 +275,6 @@ async function getAlternativeSuggestions(
         include: { shift: true },
         where: {
           shift: {
-            // only look at assignments in the same week
             startTime: {
               gte: subDays(shift.startTime, 7),
               lte: shift.startTime,
@@ -132,23 +283,42 @@ async function getAlternativeSuggestions(
         },
       },
     },
-    take: 3, // return max 3 suggestions
+    take: 15,
   });
 
-  return qualified.map((staff) => {
-    const hoursThisWeek = staff.assignments.reduce((sum, a) => {
-      return (
-        sum +
-        differenceInHours(a.shift.endTime, a.shift.startTime)
+  // Run every BLOCK-level check against each candidate
+  const vetted: StaffSuggestion[] = [];
+
+  for (const candidate of candidates) {
+    if (vetted.length >= 3) break; // we only need 3
+
+    const assignable = await isAssignableToShift(candidate.id, {
+      id: shift.id,
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+      locationId: shift.locationId,
+      requiredSkill: shift.requiredSkill,
+      location: { timezone: shift.location.timezone },
+    });
+
+    if (assignable) {
+      const hoursThisWeek = candidate.assignments.reduce(
+        (sum, a) => sum + differenceInHours(a.shift.endTime, a.shift.startTime),
+        0
       );
-    }, 0);
-    return {
-      id: staff.id,
-      name: staff.name,
-      email: staff.email,
-      hoursThisWeek,
-    };
-  });
+      vetted.push({
+        id: candidate.id,
+        name: candidate.name,
+        email: candidate.email,
+        hoursThisWeek,
+      });
+    }
+  }
+
+  // Sort by fewest weekly hours first (fairness)
+  vetted.sort((a, b) => a.hoursThisWeek - b.hoursThisWeek);
+
+  return vetted;
 }
 
 // ─────────────────────────────────────────────

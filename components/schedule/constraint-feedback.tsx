@@ -78,7 +78,7 @@ export function ConstraintFeedback({
           )}
 
           {/* Alternative suggestions */}
-          {constraint.suggestions.length > 0 && (
+          {constraint.suggestions.length > 0 ? (
             <div className="mt-2">
               <button
                 onClick={() => setShowSuggestions(!showSuggestions)}
@@ -118,6 +118,12 @@ export function ConstraintFeedback({
                 )}
               </AnimatePresence>
             </div>
+          ) : (
+            isBlock && (
+              <p className="mt-2 text-[12px] text-muted-foreground italic">
+                No available staff — all qualified members have scheduling conflicts, are unavailable, or lack rest time.
+              </p>
+            )
           )}
         </div>
       </div>
