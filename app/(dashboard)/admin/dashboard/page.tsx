@@ -12,6 +12,7 @@ import {
 import { KpiCard, KpiCardSkeleton } from "@/components/admin/kpi-card";
 import { OnDutyGrid } from "@/components/admin/on-duty-grid";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SectionErrorBoundary } from "@/components/ui/error-boundary";
 
 interface KpiData {
   activeShifts: number;
@@ -82,6 +83,7 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* KPI cards */}
+      <SectionErrorBoundary section="KPIs" compact>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {loading ? (
           Array.from({ length: 4 }).map((_, i) => <KpiCardSkeleton key={i} />)
@@ -130,8 +132,10 @@ export default function AdminDashboardPage() {
           </>
         )}
       </div>
+      </SectionErrorBoundary>
 
       {/* On-duty grid */}
+      <SectionErrorBoundary section="On-Duty" compact>
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Who&apos;s On Duty Now</CardTitle>
@@ -149,6 +153,7 @@ export default function AdminDashboardPage() {
           )}
         </CardContent>
       </Card>
+      </SectionErrorBoundary>
     </div>
   );
 }

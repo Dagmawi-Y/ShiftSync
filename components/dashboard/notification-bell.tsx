@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 import { useDashboard } from "@/lib/dashboard-context";
 import { useNotifications } from "@/lib/hooks/useNotification";
@@ -16,17 +17,48 @@ import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
 
+// Shake keyframes for the bell icon
+const shakeVariants = {
+  idle: { rotate: 0 },
+  shake: {
+    rotate: [0, -15, 12, -10, 8, -5, 3, 0],
+    transition: { duration: 0.6, ease: "easeInOut" as const },
+  },
+};
+
 export function NotificationBell() {
   const { profile } = useDashboard();
   const { notifications, unreadCount, markAllRead } = useNotifications(
     profile.id
   );
 
+  // Track previous unread count to detect new notifications
+  const prevCountRef = useRef(unreadCount);
+  const [shouldShake, setShouldShake] = useState(false);
+
+  useEffect(() => {
+    if (unreadCount > prevCountRef.current) {
+      setShouldShake(true);
+      const timer = setTimeout(() => setShouldShake(false), 700);
+      return () => clearTimeout(timer);
+    }
+    prevCountRef.current = unreadCount;
+  }, [unreadCount]);
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon-sm" className="relative">
-          <Bell className="size-4" />
+          <motion.div
+            variants={shakeVariants}
+            animate={shouldShake ? "shake" : "idle"}
+            onAnimationComplete={() => {
+              setShouldShake(false);
+              prevCountRef.current = unreadCount;
+            }}
+          >
+            <Bell className="size-4" />
+          </motion.div>
           <AnimatePresence>
             {unreadCount > 0 && (
               <motion.span

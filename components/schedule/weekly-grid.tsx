@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { ShiftCard, type ShiftData } from "./shift-card";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -105,12 +106,13 @@ export function WeeklyGrid({
                   <span className="text-xs">No shifts</span>
                 </div>
               ) : (
-                dayShifts.map((shift) => (
+                dayShifts.map((shift, i) => (
                   <ShiftCard
                     key={shift.id}
                     shift={shift}
                     isHighlighted={shift.id === highlightedShiftId}
                     onClick={() => onShiftClick(shift)}
+                    staggerIndex={i}
                   />
                 ))
               )}

@@ -71,11 +71,13 @@ interface ShiftCardProps {
   shift: ShiftData;
   isHighlighted?: boolean;
   onClick?: () => void;
+  /** Index for staggered entrance animation */
+  staggerIndex?: number;
 }
 
 // ─── Component ───────────────────────────────────────────
 
-export function ShiftCard({ shift, isHighlighted, onClick }: ShiftCardProps) {
+export function ShiftCard({ shift, isHighlighted, onClick, staggerIndex = 0 }: ShiftCardProps) {
   const colors = getSkillColor(shift.requiredSkill);
   const assignedCount = shift.assignments.length;
   const isFilled = assignedCount >= shift.headcount;
@@ -100,7 +102,8 @@ export function ShiftCard({ shift, isHighlighted, onClick }: ShiftCardProps) {
       }}
       transition={{
         layout: { duration: 0.2 },
-        opacity: { duration: 0.2 },
+        opacity: { duration: 0.2, delay: staggerIndex * 0.04 },
+        scale: { duration: 0.2, delay: staggerIndex * 0.04 },
         boxShadow: { duration: 1.5, repeat: isHighlighted ? 2 : 0 },
       }}
       onClick={onClick}

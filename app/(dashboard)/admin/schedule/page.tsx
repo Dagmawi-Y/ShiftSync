@@ -6,6 +6,7 @@ import { Plus } from "lucide-react";
 
 import { useDashboard } from "@/lib/dashboard-context";
 import { useSchedule } from "@/lib/hooks/useSchedule";
+import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { Button } from "@/components/ui/button";
 import { WeekNavigator } from "@/components/schedule/week-navigator";
 import { WeeklyGrid, WeeklyGridSkeleton } from "@/components/schedule/weekly-grid";
@@ -75,6 +76,28 @@ export default function AdminSchedulePage() {
       if (updated) setSelectedShift(updated);
     }
   }, [refetch, selectedShift, shifts]);
+
+  // ─── Keyboard shortcuts ──────────────────────────────────
+
+  useKeyboardShortcuts([
+    {
+      key: "n",
+      handler: () => {
+        if (locationId) {
+          setCreateDefaultDate(undefined);
+          setCreateDialogOpen(true);
+        }
+      },
+    },
+    {
+      key: "Escape",
+      handler: () => {
+        if (selectedShift) handlePanelClose();
+        else if (createDialogOpen) setCreateDialogOpen(false);
+      },
+      ignoreWhenEditing: false,
+    },
+  ]);
 
   if (!locationId) {
     return (

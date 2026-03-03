@@ -51,6 +51,7 @@ export function StaffAssignmentRow({
   conflictStaffIds,
 }: StaffAssignmentRowProps) {
   const [loading, setLoading] = useState(false);
+  const [optimisticAssigned, setOptimisticAssigned] = useState(false);
   const [constraint, setConstraint] = useState<ConstraintInfo | null>(null);
   const [preview, setPreview] = useState<{
     projectedWeeklyHours: number;
@@ -61,13 +62,18 @@ export function StaffAssignmentRow({
   const [isOverriding, setIsOverriding] = useState(false);
 
   const hasConflict = conflictStaffIds?.has(staff.id);
+  const showAsAssigned = isAssigned || optimisticAssigned;
 
   const handleAssign = async () => {
     setLoading(true);
     setConstraint(null);
+    // Optimistic: immediately show as assigned
+    setOptimisticAssigned(true);
     try {
       await onAssign(staff.id);
     } catch (err: unknown) {
+      // Rollback optimistic update on failure
+      setOptimisticAssigned(false);
       // If the API returns a constraint violation, show it inline
       if (err && typeof err === "object" && "constraint" in err) {
         setConstraint((err as { constraint: ConstraintInfo }).constraint);
@@ -89,7 +95,7 @@ export function StaffAssignmentRow({
   };
 
   const handleHoverPreview = async () => {
-    if (preview || isAssigned) return;
+    if (preview || showAsAssigned) return;
     const p = await onPreview(staff.id);
     setPreview(p);
     setShowPreview(true);
@@ -102,7 +108,7 @@ export function StaffAssignmentRow({
       <div
         className={cn(
           "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors",
-          isAssigned
+          showAsAssigned
             ? "bg-emerald-50 dark:bg-emerald-950/30"
             : "hover:bg-muted/50",
           hasConflict && "ring-2 ring-amber-400/50"
@@ -140,7 +146,7 @@ export function StaffAssignmentRow({
 
         {/* Preview tooltip on hover */}
         <AnimatePresence>
-          {showPreview && preview && !isAssigned && (
+          {showPreview && preview && !showAsAssigned && (
             <motion.div
               initial={{ opacity: 0, x: -4 }}
               animate={{ opacity: 1, x: 0 }}
@@ -160,11 +166,17 @@ export function StaffAssignmentRow({
         </AnimatePresence>
 
         {/* Action */}
-        {isAssigned ? (
-          <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+        {showAsAssigned ? (
+          <motion.div
+            initial={optimisticAssigned ? { scale: 0.8, opacity: 0 } : false}
+            animate={{ scale: 1, opacity: 1 }}
+            className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400"
+          >
             <Check className="size-4" />
-            <span className="text-xs font-medium">Assigned</span>
-          </div>
+            <span className="text-xs font-medium">
+              {optimisticAssigned && loading ? "Assigning…" : "Assigned"}
+            </span>
+          </motion.div>
         ) : (
           <Button
             variant="outline"

@@ -161,7 +161,7 @@ export function ShiftDetailPanel({
             animate={{ x: 0 }}
             exit={{ x: 420 }}
             transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-            className="fixed right-0 top-0 bottom-0 z-50 w-[400px] max-w-full bg-background border-l border-border shadow-xl flex flex-col"
+            className="fixed right-0 top-0 bottom-0 z-50 w-full sm:w-[400px] max-w-full bg-background border-l border-border shadow-xl flex flex-col"
           >
             <TooltipProvider>
               {/* Header */}

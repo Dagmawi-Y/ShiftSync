@@ -71,6 +71,23 @@ export function Header() {
 
       {/* Right: actions */}
       <div className="flex items-center gap-1">
+        <button
+          onClick={() => {
+            window.dispatchEvent(
+              new KeyboardEvent("keydown", {
+                key: "k",
+                metaKey: true,
+                bubbles: true,
+              })
+            );
+          }}
+          className="hidden sm:flex items-center gap-1.5 rounded-md border bg-muted/50 px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-muted transition-colors"
+        >
+          <span>Search</span>
+          <kbd className="rounded border bg-background px-1 py-0.5 text-[10px] font-mono">
+            ⌘K
+          </kbd>
+        </button>
         <NotificationBell />
         <ThemeSwitcher />
       </div>
