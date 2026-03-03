@@ -4,6 +4,7 @@ import { ThemeProvider } from "next-themes";
 import { Providers } from "@/lib/providers";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
+import { Analytics } from "@vercel/analytics/next";
 
 const defaultUrl = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
@@ -40,7 +41,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.variable} ${dmSans.variable} font-sans antialiased`}>
+      <body
+        className={`${inter.variable} ${dmSans.variable} font-sans antialiased`}
+      >
+        <Analytics />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
