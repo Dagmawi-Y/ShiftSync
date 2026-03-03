@@ -5,10 +5,30 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Mail, Lock, Loader2, Eye, EyeOff } from "lucide-react";
+import {
+  FamilyDrawerRoot,
+  FamilyDrawerTrigger,
+  FamilyDrawerContent,
+  FamilyDrawerAnimatedWrapper,
+  FamilyDrawerAnimatedContent,
+  useFamilyDrawer,
+} from "@/components/ui/family-drawer";
+import {
+  Mail,
+  Lock,
+  Loader2,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  Building2,
+  UserRound,
+  Users,
+  ChevronRight,
+  ArrowLeft,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 
 type Role = "ADMIN" | "MANAGER" | "STAFF";
 
@@ -23,6 +43,187 @@ function getDashboardPath(role: Role): string {
     default:
       return "/";
   }
+}
+
+interface DemoAccount {
+  name: string;
+  email: string;
+  detail: string;
+}
+
+interface DemoGroup {
+  role: Role;
+  label: string;
+  icon: typeof ShieldCheck;
+  color: string;
+  bg: string;
+  accounts: DemoAccount[];
+}
+
+const DEMO_GROUPS: DemoGroup[] = [
+  {
+    role: "ADMIN",
+    label: "Admin",
+    icon: ShieldCheck,
+    color: "text-violet-600 dark:text-violet-400",
+    bg: "bg-violet-500/10",
+    accounts: [
+      { name: "System Admin", email: "linkdaggy@gmail.com", detail: "All locations" },
+    ],
+  },
+  {
+    role: "MANAGER",
+    label: "Managers",
+    icon: Building2,
+    color: "text-blue-600 dark:text-blue-400",
+    bg: "bg-blue-500/10",
+    accounts: [
+      { name: "Maria Santos", email: "maria.santos@coastaleats.com", detail: "Santa Monica" },
+      { name: "James Chen", email: "james.chen@coastaleats.com", detail: "Venice Beach" },
+      { name: "Aisha Johnson", email: "aisha.johnson@coastaleats.com", detail: "Miami Beach & Fort Lauderdale" },
+      { name: "Carlos Rivera", email: "carlos.rivera@coastaleats.com", detail: "Fort Lauderdale" },
+    ],
+  },
+  {
+    role: "STAFF",
+    label: "Staff",
+    icon: UserRound,
+    color: "text-emerald-600 dark:text-emerald-400",
+    bg: "bg-emerald-500/10",
+    accounts: [
+      { name: "Sarah Kim", email: "sarah.kim@coastaleats.com", detail: "Bartender, Server" },
+      { name: "Marcus Thompson", email: "marcus.thompson@coastaleats.com", detail: "Line Cook" },
+      { name: "Jessica Nguyen", email: "jessica.nguyen@coastaleats.com", detail: "Server, Host" },
+      { name: "David Okafor", email: "david.okafor@coastaleats.com", detail: "Bartender" },
+      { name: "Emily Watson", email: "emily.watson@coastaleats.com", detail: "Server" },
+      { name: "Ryan Park", email: "ryan.park@coastaleats.com", detail: "Line Cook, Host" },
+      { name: "Nina Rodriguez", email: "nina.rodriguez@coastaleats.com", detail: "Bartender, Server" },
+      { name: "Tyler Brooks", email: "tyler.brooks@coastaleats.com", detail: "Host" },
+      { name: "Jade Morrison", email: "jade.morrison@coastaleats.com", detail: "Server, Bartender" },
+      { name: "Kevin Liu", email: "kevin.liu@coastaleats.com", detail: "Line Cook" },
+    ],
+  },
+];
+
+const DEMO_PASSWORD = "ShiftSync2026!";
+
+// ─── Drawer views ───────────────────────────────────────────
+
+function RolePickerView({
+  onSelect,
+}: {
+  onSelect?: (email: string) => void;
+}) {
+  const { setView, elementRef } = useFamilyDrawer();
+
+  return (
+    <div ref={elementRef}>
+      <header className="flex items-center gap-2 border-b border-border px-4 pb-4 pt-1">
+        <Users className="h-4 w-4 text-muted-foreground" />
+        <h2 className="text-[15px] font-semibold">Demo Accounts</h2>
+      </header>
+      <div className="space-y-1 p-3">
+        {DEMO_GROUPS.map((group) => (
+          <button
+            key={group.role}
+            type="button"
+            onClick={() => setView(group.role)}
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-muted/60"
+          >
+            <div
+              className={cn(
+                "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                group.bg
+              )}
+            >
+              <group.icon className={cn("h-4 w-4", group.color)} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">{group.label}</p>
+              <p className="text-xs text-muted-foreground">
+                {group.accounts.length} account{group.accounts.length > 1 ? "s" : ""}
+              </p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground/40" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AccountListView({
+  group,
+  onSelect,
+  selectedEmail,
+}: {
+  group: DemoGroup;
+  onSelect: (email: string) => void;
+  selectedEmail: string;
+}) {
+  const { setView, elementRef } = useFamilyDrawer();
+
+  return (
+    <div ref={elementRef}>
+      <header className="flex items-center gap-2 border-b border-border px-4 pb-4 pt-1">
+        <button
+          type="button"
+          onClick={() => setView("default")}
+          className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-muted"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <div className={cn("flex h-7 w-7 items-center justify-center rounded-md", group.bg)}>
+          <group.icon className={cn("h-3.5 w-3.5", group.color)} />
+        </div>
+        <h2 className="text-[15px] font-semibold">{group.label}</h2>
+      </header>
+      <div className="space-y-0.5 p-2">
+        {group.accounts.map((account) => {
+          const initials = account.name
+            .split(" ")
+            .map((n) => n[0])
+            .join("");
+          const isSelected = selectedEmail === account.email;
+
+          return (
+            <button
+              key={account.email}
+              type="button"
+              onClick={() => onSelect(account.email)}
+              className={cn(
+                "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all",
+                isSelected
+                  ? "bg-primary/10 ring-1 ring-primary/20"
+                  : "hover:bg-muted/60"
+              )}
+            >
+              <div
+                className={cn(
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                  group.bg,
+                  group.color
+                )}
+              >
+                {initials}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium leading-tight">
+                  {account.name}
+                </p>
+                <p className="text-[11px] text-muted-foreground truncate">
+                  {account.detail}
+                </p>
+              </div>
+              {isSelected && (
+                <div className="h-2 w-2 rounded-full bg-primary shrink-0" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export function LoginForm({
@@ -158,6 +359,109 @@ export function LoginForm({
         Don&apos;t have an account? Contact your administrator to receive an
         invitation.
       </p>
+
+      {/* Quick login — demo accounts drawer */}
+      <div className="space-y-3">
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t" />
+          </div>
+          <div className="relative flex justify-center text-xs">
+            <span className="bg-background px-2 text-muted-foreground/60">
+              or
+            </span>
+          </div>
+        </div>
+
+        <DemoAccountDrawer
+          selectedEmail={email}
+          onSelect={(selectedEmail) => {
+            setEmail(selectedEmail);
+            setPassword(DEMO_PASSWORD);
+            setError(null);
+          }}
+        />
+      </div>
     </div>
   );
+}
+
+// ─── Drawer wrapper ─────────────────────────────────────────
+
+function DemoAccountDrawer({
+  selectedEmail,
+  onSelect,
+}: {
+  selectedEmail: string;
+  onSelect: (email: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const handleSelect = useCallback(
+    (email: string) => {
+      onSelect(email);
+      setOpen(false);
+    },
+    [onSelect]
+  );
+
+  const views = {
+    default: () => (
+      <RolePickerView onSelect={handleSelect} />
+    ),
+    ADMIN: () => (
+      <AccountListView
+        group={DEMO_GROUPS[0]}
+        onSelect={handleSelect}
+        selectedEmail={selectedEmail}
+      />
+    ),
+    MANAGER: () => (
+      <AccountListView
+        group={DEMO_GROUPS[1]}
+        onSelect={handleSelect}
+        selectedEmail={selectedEmail}
+      />
+    ),
+    STAFF: () => (
+      <AccountListView
+        group={DEMO_GROUPS[2]}
+        onSelect={handleSelect}
+        selectedEmail={selectedEmail}
+      />
+    ),
+  };
+
+  return (
+    <FamilyDrawerRoot views={views} open={open} onOpenChange={setOpen}>
+      <FamilyDrawerTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full h-10 gap-2 font-medium"
+        >
+          <Users className="h-4 w-4" />
+          Use a demo account
+        </Button>
+      </FamilyDrawerTrigger>
+      <FamilyDrawerContent>
+        <FamilyDrawerAnimatedWrapper>
+          <FamilyDrawerAnimatedContent>
+            <DrawerViewRenderer views={views} />
+          </FamilyDrawerAnimatedContent>
+        </FamilyDrawerAnimatedWrapper>
+      </FamilyDrawerContent>
+    </FamilyDrawerRoot>
+  );
+}
+
+/** Renders the current view from the drawer's context */
+function DrawerViewRenderer({
+  views,
+}: {
+  views: Record<string, React.ComponentType>;
+}) {
+  const { view } = useFamilyDrawer();
+  const ViewComponent = views[view] ?? views["default"];
+  return <ViewComponent />;
 }
