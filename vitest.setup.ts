@@ -1,3 +1,5 @@
+/// <reference types="vitest/globals" />
+
 // Global test setup — mocks that every test file may need
 
 // Force UTC so that date-fns parseISO (which parses as local time when no
