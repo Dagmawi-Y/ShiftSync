@@ -4,7 +4,7 @@ import { getAuthProfile, managerOwnsLocation, ok, err, validationErr } from "@/l
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { isFriday, isSaturday, getHours } from "date-fns";
-import { Skill, SwapStatus } from "@prisma/client";
+import { Skill, SwapStatus } from "@/generated/prisma/client";
 
 const UpdateShiftSchema = z.object({
   requiredSkill: z.nativeEnum(Skill).optional(),

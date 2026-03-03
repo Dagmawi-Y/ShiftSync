@@ -1,7 +1,7 @@
 // app/api/shifts/route.ts
 import { prisma } from "@/lib/prisma";
 import { getAuthProfile, managerOwnsLocation, ok, err, validationErr } from "@/lib/apiUtils";
-import { Skill } from "@prisma/client";
+import { Skill } from "@/generated/prisma/client";
 import { isFriday, isSaturday, getHours } from "date-fns";
 import { NextRequest } from "next/server";
 import { z } from "zod";
