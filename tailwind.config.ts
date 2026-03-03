@@ -10,9 +10,19 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["var(--font-inter)", "system-ui", "sans-serif"],
+        display: ["var(--font-dm-sans)", "var(--font-inter)", "system-ui", "sans-serif"],
+      },
       colors: {
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
+        shiftsync: {
+          blue: "#4DA8DA",
+          teal: "#80D8C3",
+          yellow: "#FFD66B",
+          light: "#F5F5F5",
+        },
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",

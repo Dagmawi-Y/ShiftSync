@@ -1,4 +1,6 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AuthLayout } from "@/components/auth-layout";
+import { AlertTriangle, ArrowLeft } from "lucide-react";
+import Link from "next/link";
 import { Suspense } from "react";
 
 async function ErrorContent({
@@ -9,17 +11,11 @@ async function ErrorContent({
   const params = await searchParams;
 
   return (
-    <>
-      {params?.error ? (
-        <p className="text-sm text-muted-foreground">
-          Code error: {params.error}
-        </p>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          An unspecified error occurred.
-        </p>
-      )}
-    </>
+    <p className="text-sm text-muted-foreground leading-relaxed max-w-xs mx-auto">
+      {params?.error
+        ? `Error: ${params.error}`
+        : "An unexpected error occurred. Please try again."}
+    </p>
   );
 }
 
@@ -29,23 +25,28 @@ export default function Page({
   searchParams: Promise<{ error: string }>;
 }) {
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
-      <div className="w-full max-w-sm">
-        <div className="flex flex-col gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-2xl">
-                Sorry, something went wrong.
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Suspense>
-                <ErrorContent searchParams={searchParams} />
-              </Suspense>
-            </CardContent>
-          </Card>
+    <AuthLayout>
+      <div className="space-y-8">
+        <div className="space-y-4 text-center">
+          <div className="mx-auto w-14 h-14 rounded-full bg-destructive/10 flex items-center justify-center">
+            <AlertTriangle className="w-7 h-7 text-destructive" />
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight font-display">
+            Something went wrong
+          </h1>
+          <Suspense>
+            <ErrorContent searchParams={searchParams} />
+          </Suspense>
         </div>
+
+        <Link
+          href="/login"
+          className="flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back to sign in
+        </Link>
       </div>
-    </div>
+    </AuthLayout>
   );
 }

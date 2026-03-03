@@ -1,15 +1,10 @@
+import { AuthLayout } from "@/components/auth-layout";
 import { UpdatePasswordForm } from "@/components/update-password-form";
-import { SiteLogo } from "@/components/site-logo";
 
 export default function Page() {
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
-      <div className="w-full max-w-sm">
-        <div className="mb-6 flex justify-center">
-          <SiteLogo />
-        </div>
-        <UpdatePasswordForm />
-      </div>
-    </div>
+    <AuthLayout>
+      <UpdatePasswordForm />
+    </AuthLayout>
   );
 }
