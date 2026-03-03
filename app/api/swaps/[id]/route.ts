@@ -13,8 +13,9 @@ const SwapActionSchema = z.object({
 // POST /api/swaps/[id] — take an action on a swap
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> }
 ) {
+  const params = await props.params;
   const profile = await getAuthProfile();
   if (!profile) return err("Unauthorized", 401);
 

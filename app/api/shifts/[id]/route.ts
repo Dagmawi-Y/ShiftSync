@@ -17,8 +17,9 @@ const UpdateShiftSchema = z.object({
 // GET /api/shifts/[id]
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> }
 ) {
+  const params = await props.params;
   const profile = await getAuthProfile();
   if (!profile) return err("Unauthorized", 401);
 
@@ -53,8 +54,9 @@ export async function GET(
 // PATCH /api/shifts/[id]
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> }
 ) {
+  const params = await props.params;
   const profile = await getAuthProfile();
   if (!profile) return err("Unauthorized", 401);
   if (profile.role === "STAFF") return err("Forbidden", 403);
@@ -101,12 +103,13 @@ export async function PATCH(
     // cancel them and notify all parties — our documented design decision
     const isTimingChange = !!startTime || !!endTime;
     if (isTimingChange && shift.swapRequests.length > 0) {
+      const activeStatuses: SwapStatus[] = [
+        SwapStatus.PENDING_STAFF,
+        SwapStatus.PENDING_MANAGER,
+        SwapStatus.APPROVED,
+      ];
       const activeSwaps = shift.swapRequests.filter((s) =>
-        [
-          SwapStatus.PENDING_STAFF,
-          SwapStatus.PENDING_MANAGER,
-          SwapStatus.APPROVED,
-        ].includes(s.status)
+        activeStatuses.includes(s.status)
       );
 
       for (const swap of activeSwaps) {
@@ -193,8 +196,9 @@ export async function PATCH(
 // DELETE /api/shifts/[id]
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> }
 ) {
+  const params = await props.params;
   const profile = await getAuthProfile();
   if (!profile) return err("Unauthorized", 401);
   if (profile.role === "STAFF") return err("Forbidden", 403);

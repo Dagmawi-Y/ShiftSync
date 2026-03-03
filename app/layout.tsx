@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Inter, DM_Sans } from "next/font/google";
 import { ThemeProvider } from "next-themes";
+import { Providers } from "@/lib/providers";
+import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
 const defaultUrl = process.env.VERCEL_URL
@@ -45,7 +47,10 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <Providers>
+            {children}
+            <Toaster />
+          </Providers>
         </ThemeProvider>
       </body>
     </html>
