@@ -48,12 +48,17 @@ export function formatShiftLabel(
 
 /**
  * Short timezone abbreviation for display, e.g. "PST", "EST".
+ * Uses Intl.DateTimeFormat so the result is independent of the server's
+ * system timezone.
  */
 export function getTimezoneAbbr(
   utcDate: Date | string,
   timezone: string
 ): string {
   const date = typeof utcDate === "string" ? new Date(utcDate) : utcDate;
-  const zoned = toZonedTime(date, timezone);
-  return fnsFormat(zoned, "zzz");
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    timeZoneName: "short",
+  }).formatToParts(date);
+  return parts.find((p) => p.type === "timeZoneName")?.value ?? timezone;
 }
