@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Bell, Mail, Loader2 } from "lucide-react";
 import {
@@ -12,7 +13,6 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { cn } from "@/lib/utils";
 
 interface Prefs {
   inApp: boolean;
@@ -63,48 +63,55 @@ const CATEGORIES: { key: keyof Prefs; label: string; description: string }[] = [
 ];
 
 export default function NotificationPreferencesPage() {
+  const queryClient = useQueryClient();
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+
+  const { data, isLoading: loading } = useQuery<Prefs>({
+    queryKey: ["notification-preferences"],
+    queryFn: async () => {
+      const res = await fetch("/api/notification-preferences");
+      const json = await res.json();
+
+      if (!res.ok) {
+        throw new Error(json.error ?? "Failed to load preferences");
+      }
+
+      return json.data ?? DEFAULT_PREFS;
+    },
+    initialData: DEFAULT_PREFS,
+  });
 
   useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch("/api/notification-preferences");
-        if (!res.ok) throw new Error();
-        const json = await res.json();
-        if (json.data) setPrefs(json.data);
-      } catch {
-        // Keep defaults
-      } finally {
-        setLoading(false);
-      }
+    if (data) {
+      setPrefs(data);
     }
-    load();
-  }, []);
+  }, [data]);
 
-  const updatePref = useCallback(
-    async (key: keyof Prefs, value: boolean) => {
-      const updated = { ...prefs, [key]: value };
-      setPrefs(updated);
-      setSaving(true);
-      try {
-        const res = await fetch("/api/notification-preferences", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ [key]: value }),
-        });
-        if (!res.ok) throw new Error();
-      } catch {
-        // Rollback
-        setPrefs(prefs);
-        toast.error("Failed to save preference");
-      } finally {
-        setSaving(false);
+  const updateMutation = useMutation({
+    mutationFn: async ({ key, value }: { key: keyof Prefs; value: boolean }) => {
+      const res = await fetch("/api/notification-preferences", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [key]: value }),
+      });
+      if (!res.ok) {
+        throw new Error("Failed to save preference");
       }
+      return { key, value };
     },
-    [prefs]
-  );
+    onError: (_error, variables) => {
+      setPrefs((prev) => ({ ...prev, [variables.key]: !variables.value }));
+      toast.error("Failed to save preference");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notification-preferences"] });
+    },
+  });
+
+  const updatePref = (key: keyof Prefs, value: boolean) => {
+    setPrefs((prev) => ({ ...prev, [key]: value }));
+    updateMutation.mutate({ key, value });
+  };
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -191,7 +198,7 @@ export default function NotificationPreferencesPage() {
         </CardContent>
       </Card>
 
-      {saving && (
+      {updateMutation.isPending && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Loader2 className="size-3 animate-spin" />
           Saving…

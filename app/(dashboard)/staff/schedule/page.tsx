@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { startOfWeek, format } from "date-fns";
 import { useDashboard } from "@/lib/dashboard-context";
 import { WeekNavigator } from "@/components/schedule/week-navigator";
@@ -15,25 +16,20 @@ export default function StaffSchedulePage() {
   const [weekStart, setWeekStart] = useState(() =>
     startOfWeek(new Date(), { weekStartsOn: 1 })
   );
-  const [shifts, setShifts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  const fetchShifts = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(
-        `/api/shifts?weekStart=${weekStart.toISOString()}`
-      );
+  const { data: shifts = [], isLoading: loading } = useQuery<any[]>({
+    queryKey: ["staff-schedule", weekStart.toISOString()],
+    queryFn: async () => {
+      const res = await fetch(`/api/shifts?weekStart=${weekStart.toISOString()}`);
       const json = await res.json();
-      if (json.success) setShifts(json.data);
-    } finally {
-      setLoading(false);
-    }
-  }, [weekStart]);
 
-  useEffect(() => {
-    fetchShifts();
-  }, [fetchShifts]);
+      if (!res.ok || !json.success) {
+        throw new Error(json.error ?? "Failed to load schedule");
+      }
+
+      return json.data ?? [];
+    },
+  });
 
   return (
     <div className="space-y-6 max-w-6xl">

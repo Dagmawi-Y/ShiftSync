@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useDashboard } from "@/lib/dashboard-context";
 import {
   startOfWeek,
@@ -54,13 +54,13 @@ interface KpiData {
 
 export default function StaffDashboardPage() {
   const { profile } = useDashboard();
-  const [kpis, setKpis] = useState<KpiData | null>(null);
-  const [upcomingShifts, setUpcomingShifts] = useState<ShiftRecord[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
+  const { data, isLoading: loading } = useQuery<{
+    kpis: KpiData;
+    upcomingShifts: ShiftRecord[];
+  }>({
+    queryKey: ["staff-dashboard", profile.id],
+    queryFn: async () => {
       const now = new Date();
       const weekStart = startOfWeek(now, { weekStartsOn: 1 });
       const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
@@ -117,12 +117,12 @@ export default function StaffDashboardPage() {
         ? format(new Date(nextShift.startTime), "EEE, MMM d · h:mm a")
         : "No upcoming shifts";
 
-      setKpis({
+      const kpis = {
         upcomingShifts: upcoming.length,
         hoursThisWeek,
         pendingSwaps: pending.length,
         nextShiftLabel,
-      });
+      };
 
       // Also fetch next week's shifts for the upcoming list
       const nextWeekRes = await fetch(
@@ -143,17 +143,12 @@ export default function StaffDashboardPage() {
         )
         .slice(0, 8);
 
-      setUpcomingShifts(allUpcoming);
-    } catch {
-      // Partial data is OK
-    } finally {
-      setLoading(false);
-    }
-  }, [profile.id]);
+      return { kpis, upcomingShifts: allUpcoming };
+    },
+  });
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  const kpis = data?.kpis ?? null;
+  const upcomingShifts = data?.upcomingShifts ?? [];
 
   return (
     <div className="space-y-8 max-w-6xl">

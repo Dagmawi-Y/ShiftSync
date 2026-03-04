@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { useDashboard } from "@/lib/dashboard-context";
 import {
   startOfWeek,
@@ -30,9 +31,6 @@ import { BarChart3, ChevronLeft, ChevronRight, Scale } from "lucide-react";
 export default function ManagerAnalyticsPage() {
   const { selectedLocationId } = useDashboard();
   const [weekOffset, setWeekOffset] = useState(0);
-  const [fairness, setFairness] = useState<FairnessEntry[]>([]);
-  const [overtime, setOvertime] = useState<OvertimeEntry[]>([]);
-  const [loading, setLoading] = useState(true);
 
   const weekStart = startOfWeek(subWeeks(new Date(), weekOffset), {
     weekStartsOn: 1,
@@ -41,9 +39,17 @@ export default function ManagerAnalyticsPage() {
     weekStartsOn: 1,
   });
 
-  const fetchAnalytics = useCallback(async () => {
-    setLoading(true);
-    try {
+  const { data, isLoading: loading } = useQuery<{
+    fairness: FairnessEntry[];
+    overtime: OvertimeEntry[];
+  }>({
+    queryKey: [
+      "manager-analytics",
+      selectedLocationId ?? "all",
+      weekStart.toISOString(),
+      weekEnd.toISOString(),
+    ],
+    queryFn: async () => {
       const params = new URLSearchParams({
         from: weekStart.toISOString(),
         to: weekEnd.toISOString(),
@@ -53,21 +59,20 @@ export default function ManagerAnalyticsPage() {
       }
 
       const res = await fetch(`/api/analytics?${params}`);
-      if (!res.ok) throw new Error();
       const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error ?? "Failed to load analytics");
+      }
       const data = json.data ?? {};
-      setFairness(data.fairnessReport ?? []);
-      setOvertime(data.overtimeRisk ?? []);
-    } catch {
-      // Graceful degrade
-    } finally {
-      setLoading(false);
-    }
-  }, [weekStart.toISOString(), weekEnd.toISOString(), selectedLocationId]);
+      return {
+        fairness: data.fairnessReport ?? [],
+        overtime: data.overtimeRisk ?? [],
+      };
+    },
+  });
 
-  useEffect(() => {
-    fetchAnalytics();
-  }, [fetchAnalytics]);
+  const fairness = data?.fairness ?? [];
+  const overtime = data?.overtime ?? [];
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -91,7 +96,7 @@ export default function ManagerAnalyticsPage() {
           >
             <ChevronLeft className="size-4" />
           </Button>
-          <span className="text-sm font-medium min-w-[180px] text-center">
+          <span className="text-sm font-medium min-w-45 text-center">
             {format(weekStart, "MMM d")} – {format(weekEnd, "MMM d, yyyy")}
           </span>
           <Button

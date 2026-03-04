@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { LocationDialog } from "@/components/admin/location-dialog";
 import {
@@ -9,46 +10,59 @@ import {
 } from "@/components/admin/location-card-grid";
 
 export default function AdminLocationsPage() {
-  const [locations, setLocations] = useState<LocationRecord[]>([]);
-  const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
-  const fetchLocations = useCallback(async () => {
-    try {
+  const {
+    data: locations = [],
+    isLoading: loading,
+    error,
+  } = useQuery<LocationRecord[]>({
+    queryKey: ["admin-locations"],
+    queryFn: async () => {
       const res = await fetch("/api/locations");
-      if (!res.ok) throw new Error();
       const json = await res.json();
-      setLocations(json.data ?? []);
-    } catch {
-      toast.error("Failed to load locations");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      if (!res.ok) {
+        throw new Error(json.error ?? "Failed to load locations");
+      }
+      return json.data ?? [];
+    },
+  });
 
   useEffect(() => {
-    fetchLocations();
-  }, [fetchLocations]);
+    if (error instanceof Error) {
+      toast.error(error.message);
+    }
+  }, [error]);
 
-  async function handleDelete(id: string, name: string) {
-    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
-
-    setDeleting(id);
-    try {
+  const deleteMutation = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
       const res = await fetch(`/api/locations?id=${id}`, { method: "DELETE" });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
         throw new Error(json.error ?? "Delete failed");
       }
+      return { name };
+    },
+    onSuccess: ({ name }) => {
       toast.success(`"${name}" deleted`);
-      setLoading(true);
-      fetchLocations();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Something went wrong";
+      queryClient.invalidateQueries({ queryKey: ["admin-locations"] });
+    },
+    onError: (mutationError) => {
+      const msg =
+        mutationError instanceof Error ? mutationError.message : "Something went wrong";
       toast.error(msg);
-    } finally {
+    },
+    onSettled: () => {
       setDeleting(null);
-    }
+    },
+  });
+
+  async function handleDelete(id: string, name: string) {
+    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+
+    setDeleting(id);
+    await deleteMutation.mutateAsync({ id, name });
   }
 
   return (
@@ -65,8 +79,7 @@ export default function AdminLocationsPage() {
         <LocationDialog
           mode="create"
           onSaved={() => {
-            setLoading(true);
-            fetchLocations();
+            queryClient.invalidateQueries({ queryKey: ["admin-locations"] });
           }}
         />
       </div>
@@ -75,8 +88,7 @@ export default function AdminLocationsPage() {
         locations={locations}
         loading={loading}
         onRefresh={() => {
-          setLoading(true);
-          fetchLocations();
+          queryClient.invalidateQueries({ queryKey: ["admin-locations"] });
         }}
         onDelete={handleDelete}
         deleting={deleting}

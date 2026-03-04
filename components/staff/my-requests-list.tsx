@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -96,40 +96,51 @@ export function MyRequestsList({
   loading,
   onAction,
 }: MyRequestsListProps) {
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
-  const performAction = useCallback(
-    async (swapId: string, action: string) => {
-      setActionLoading(`${swapId}-${action}`);
-      try {
-        const res = await fetch(`/api/swaps/${swapId}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action }),
-        });
+  const actionMutation = useMutation({
+    mutationFn: async ({ swapId, action }: { swapId: string; action: string }) => {
+      const res = await fetch(`/api/swaps/${swapId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
 
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error ?? `Failed to ${action.toLowerCase()}`);
-        }
-
-        const labels: Record<string, string> = {
-          ACCEPT: "Swap accepted — waiting for manager approval",
-          REJECT: "Swap request rejected",
-          CANCEL: "Request cancelled",
-        };
-        toast.success(labels[action] ?? "Action completed");
-        onAction?.();
-      } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "Something went wrong"
-        );
-      } finally {
-        setActionLoading(null);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `Failed to ${action.toLowerCase()}`);
       }
+
+      return { action };
     },
-    [onAction]
-  );
+    onSuccess: ({ action }) => {
+      const labels: Record<string, string> = {
+        ACCEPT: "Swap accepted — waiting for manager approval",
+        REJECT: "Swap request rejected",
+        CANCEL: "Request cancelled",
+      };
+      toast.success(labels[action] ?? "Action completed");
+      queryClient.invalidateQueries({ queryKey: ["staff-swaps"] });
+      queryClient.invalidateQueries({ queryKey: ["manager-swaps"] });
+      onAction?.();
+    },
+    onError: (mutationError) => {
+      const message =
+        mutationError instanceof Error
+          ? mutationError.message
+          : "Something went wrong";
+      toast.error(message);
+    },
+  });
+
+  const performAction = async (swapId: string, action: string) => {
+    await actionMutation.mutateAsync({ swapId, action });
+  };
+
+  const activeActionKey =
+    actionMutation.isPending && actionMutation.variables
+      ? `${actionMutation.variables.swapId}-${actionMutation.variables.action}`
+      : null;
 
   // Separate into categories
   const incoming = requests.filter(
@@ -176,7 +187,7 @@ export function MyRequestsList({
                     key={req.id}
                     request={req}
                     profileId={profileId}
-                    actionLoading={actionLoading}
+                    actionLoading={activeActionKey}
                     onAction={performAction}
                     variant="incoming"
                   />
@@ -195,7 +206,7 @@ export function MyRequestsList({
                     key={req.id}
                     request={req}
                     profileId={profileId}
-                    actionLoading={actionLoading}
+                    actionLoading={activeActionKey}
                     onAction={performAction}
                     variant="outgoing"
                   />

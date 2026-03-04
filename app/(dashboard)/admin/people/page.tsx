@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { useDashboard } from "@/lib/dashboard-context";
 import { PeopleTable, type StaffRecord } from "@/components/admin/people-table";
 import { InviteDialog } from "@/components/admin/invite-dialog";
@@ -8,25 +9,29 @@ import { toast } from "sonner";
 
 export default function AdminPeoplePage() {
   const { locations } = useDashboard();
-  const [staff, setStaff] = useState<StaffRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  const fetchUsers = useCallback(async () => {
-    try {
+  const {
+    data: staff = [],
+    isLoading: loading,
+    error,
+  } = useQuery<StaffRecord[]>({
+    queryKey: ["admin-users"],
+    queryFn: async () => {
       const res = await fetch("/api/users");
-      if (!res.ok) throw new Error();
       const json = await res.json();
-      setStaff(json.data ?? []);
-    } catch {
-      toast.error("Failed to load users");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      if (!res.ok) {
+        throw new Error(json.error ?? "Failed to load users");
+      }
+      return json.data ?? [];
+    },
+  });
 
   useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
+    if (error instanceof Error) {
+      toast.error(error.message);
+    }
+  }, [error]);
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -42,8 +47,7 @@ export default function AdminPeoplePage() {
         <InviteDialog
           locations={locations}
           onInvited={() => {
-            setLoading(true);
-            fetchUsers();
+            queryClient.invalidateQueries({ queryKey: ["admin-users"] });
           }}
         />
       </div>

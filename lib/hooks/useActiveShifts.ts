@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useRealtimeSubscription } from "./useRealtimeSubscription";
 
 interface AssignedStaff {
@@ -33,9 +34,28 @@ interface ActiveShiftsResponse {
  *   correct than trying to merge real-time payloads into local state
  */
 export function useActiveShifts(locationId?: string) {
-  const [data, setData] = useState<ActiveShiftsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const queryKey = ["active-shifts", locationId ?? "all"] as const;
+
+  const {
+    data,
+    isLoading,
+    error,
+    refetch,
+  } = useQuery<ActiveShiftsResponse>({
+    queryKey,
+    queryFn: async () => {
+      const params = locationId ? `?locationId=${locationId}` : "";
+      const res = await fetch(`/api/shifts/active${params}`);
+      const json = await res.json();
+
+      if (!res.ok || !json.success) {
+        throw new Error(json.error ?? "Failed to fetch active shifts");
+      }
+
+      return json.data;
+    },
+  });
 
   const activeShiftIds = useMemo(
     () => new Set((data?.shifts ?? []).map((shift) => shift.id)),
@@ -43,35 +63,16 @@ export function useActiveShifts(locationId?: string) {
   );
   const refetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchActiveShifts = useCallback(async () => {
-    try {
-      const params = locationId ? `?locationId=${locationId}` : "";
-      const res = await fetch(`/api/shifts/active${params}`);
-      const json = await res.json();
-      if (json.success) setData(json.data);
-      else setError(json.error);
-    } catch {
-      setError("Failed to fetch active shifts");
-    } finally {
-      setLoading(false);
-    }
-  }, [locationId]);
-
-  // Initial fetch
-  useEffect(() => {
-    fetchActiveShifts();
-  }, [fetchActiveShifts]);
-
   const queueRefetch = useCallback(() => {
     if (refetchTimeoutRef.current) {
       clearTimeout(refetchTimeoutRef.current);
     }
 
     refetchTimeoutRef.current = setTimeout(() => {
-      fetchActiveShifts();
+      queryClient.invalidateQueries({ queryKey });
       refetchTimeoutRef.current = null;
     }, 150);
-  }, [fetchActiveShifts]);
+  }, [queryClient, queryKey]);
 
   useEffect(() => {
     return () => {
@@ -132,5 +133,10 @@ export function useActiveShifts(locationId?: string) {
     },
   });
 
-  return { data, loading, error, refetch: fetchActiveShifts };
+  return {
+    data: data ?? null,
+    loading: isLoading,
+    error: error instanceof Error ? error.message : null,
+    refetch,
+  };
 }

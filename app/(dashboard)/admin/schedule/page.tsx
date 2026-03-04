@@ -1,5 +1,6 @@
 "use client";
 
+import { useMutation } from "@tanstack/react-query";
 import { useState, useCallback } from "react";
 import { startOfWeek } from "date-fns";
 import { Plus } from "lucide-react";
@@ -38,6 +39,29 @@ export default function AdminSchedulePage() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createDefaultDate, setCreateDefaultDate] = useState<Date | undefined>();
 
+  const deleteShiftMutation = useMutation({
+    mutationFn: async (shiftId: string) => {
+      const res = await fetch(`/api/shifts/${shiftId}`, {
+        method: "DELETE",
+      });
+      const json = await res.json();
+      if (!json.success) {
+        throw new Error(json.error || "Failed to delete shift");
+      }
+    },
+    onSuccess: () => {
+      toast.success("Shift deleted");
+      refetch();
+    },
+    onError: (mutationError) => {
+      const message =
+        mutationError instanceof Error
+          ? mutationError.message
+          : "Failed to delete shift";
+      toast.error(message);
+    },
+  });
+
   // ─── Handlers ────────────────────────────────────────────
 
   const handleShiftClick = useCallback((shift: ShiftData) => {
@@ -51,18 +75,9 @@ export default function AdminSchedulePage() {
 
   const handleDeleteShift = useCallback(
     async (shiftId: string) => {
-      const res = await fetch(`/api/shifts/${shiftId}`, {
-        method: "DELETE",
-      });
-      const json = await res.json();
-      if (json.success) {
-        toast.success("Shift deleted");
-        refetch();
-      } else {
-        toast.error(json.error || "Failed to delete shift");
-      }
+      await deleteShiftMutation.mutateAsync(shiftId);
     },
-    [refetch]
+    [deleteShiftMutation]
   );
 
   const handlePanelClose = useCallback(() => {

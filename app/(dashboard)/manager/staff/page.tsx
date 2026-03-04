@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { useDashboard } from "@/lib/dashboard-context";
 import { toast } from "sonner";
 import { Search, Users, Filter } from "lucide-react";
@@ -63,33 +64,36 @@ const ALL_SKILLS = [
 
 export default function ManagerStaffPage() {
   const { selectedLocationId, locations } = useDashboard();
-  const [staff, setStaff] = useState<StaffMember[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [skillFilter, setSkillFilter] = useState<string>("all");
 
-  const fetchStaff = useCallback(async () => {
-    setLoading(true);
-    try {
+  const {
+    data: staff = [],
+    isLoading: loading,
+    error,
+  } = useQuery<StaffMember[]>({
+    queryKey: ["manager-staff", selectedLocationId ?? "all", skillFilter],
+    queryFn: async () => {
       const params = new URLSearchParams();
       if (selectedLocationId) params.set("locationId", selectedLocationId);
-      if (skillFilter && skillFilter !== "all")
-        params.set("skill", skillFilter);
+      if (skillFilter && skillFilter !== "all") params.set("skill", skillFilter);
 
       const res = await fetch(`/api/staff?${params}`);
-      if (!res.ok) throw new Error();
       const json = await res.json();
-      setStaff(json.data ?? []);
-    } catch {
-      toast.error("Failed to load staff");
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedLocationId, skillFilter]);
+
+      if (!res.ok) {
+        throw new Error(json.error ?? "Failed to load staff");
+      }
+
+      return json.data ?? [];
+    },
+  });
 
   useEffect(() => {
-    fetchStaff();
-  }, [fetchStaff]);
+    if (error instanceof Error) {
+      toast.error(error.message);
+    }
+  }, [error]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return staff;
@@ -124,7 +128,7 @@ export default function ManagerStaffPage() {
 
       {/* Filters */}
       <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
+        <div className="relative flex-1 min-w-50 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search by name, email, or skill…"
@@ -134,7 +138,7 @@ export default function ManagerStaffPage() {
           />
         </div>
         <Select value={skillFilter} onValueChange={setSkillFilter}>
-          <SelectTrigger className="w-[160px]">
+          <SelectTrigger className="w-40">
             <Filter className="size-3.5 mr-1.5 text-muted-foreground" />
             <SelectValue placeholder="All Skills" />
           </SelectTrigger>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { useDashboard } from "@/lib/dashboard-context";
 import { SwapRequestForm } from "@/components/staff/swap-request-form";
 import { DropRequestDialog } from "@/components/staff/drop-request-dialog";
@@ -10,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getSkillColor, formatSkillLabel } from "@/components/schedule/shift-card";
 import { format } from "date-fns";
-import { ArrowDown, Loader2 } from "lucide-react";
+import { ArrowDown } from "lucide-react";
 import { toast } from "sonner";
 import { useRealtimeSubscription } from "@/lib/hooks/useRealtimeSubscription";
 
@@ -26,78 +27,78 @@ interface ShiftForDrop {
 export default function StaffSwapsPage() {
   const { profile } = useDashboard();
   const profileId = profile.id;
+  const queryClient = useQueryClient();
 
-  // ── Swap requests ──────────────────────────────────────
-  const [requests, setRequests] = useState<any[]>([]);
-  const [requestsLoading, setRequestsLoading] = useState(true);
-
-  const fetchRequests = useCallback(async () => {
-    try {
+  const {
+    data: requests = [],
+    isLoading: requestsLoading,
+    error: requestsError,
+  } = useQuery<any[]>({
+    queryKey: ["staff-swaps", profileId],
+    queryFn: async () => {
       const res = await fetch("/api/swaps");
-      if (!res.ok) throw new Error();
       const data = await res.json();
-      setRequests(data.swaps ?? data.data ?? data ?? []);
-    } catch {
-      toast.error("Failed to load swap requests");
-    } finally {
-      setRequestsLoading(false);
-    }
-  }, []);
+
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to load swap requests");
+      }
+
+      return data.swaps ?? data.data ?? data ?? [];
+    },
+  });
 
   useEffect(() => {
-    fetchRequests();
-  }, [fetchRequests]);
+    if (requestsError instanceof Error) {
+      toast.error(requestsError.message);
+    }
+  }, [requestsError]);
 
   // Real-time: auto-refresh when any SwapRequest changes
   useRealtimeSubscription({
     table: "SwapRequest",
     event: "*",
-    onchange: () => fetchRequests(),
+    onchange: () => {
+      queryClient.invalidateQueries({ queryKey: ["staff-swaps", profileId] });
+    },
   });
 
-  const handleRefresh = useCallback(() => {
-    setRequestsLoading(true);
-    fetchRequests();
-  }, [fetchRequests]);
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["staff-swaps", profileId] });
+    queryClient.invalidateQueries({ queryKey: ["staff-drop-shifts", profileId] });
+  };
 
   // ── Drop dialog ────────────────────────────────────────
   const [dropShift, setDropShift] = useState<ShiftForDrop | null>(null);
   const [dropDialogOpen, setDropDialogOpen] = useState(false);
 
-  // ── Quick-drop: load user's upcoming shifts ────────────
-  const [myShifts, setMyShifts] = useState<ShiftForDrop[]>([]);
-  const [shiftsLoading, setShiftsLoading] = useState(true);
+  const { data: myShifts = [], isLoading: shiftsLoading } = useQuery<ShiftForDrop[]>({
+    queryKey: ["staff-drop-shifts", profileId],
+    queryFn: async () => {
+      const now = new Date();
+      const weekStart = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate()
+      ).toISOString();
 
-  useEffect(() => {
-    async function loadShifts() {
-      try {
-        const now = new Date();
-        const weekStart = new Date(
-          now.getFullYear(),
-          now.getMonth(),
-          now.getDate()
-        ).toISOString();
-        const res = await fetch(`/api/shifts?weekStart=${weekStart}`);
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-        const allShifts = data.shifts ?? data.data ?? data ?? [];
-        const assigned = allShifts.filter((s: ShiftForDrop) =>
-          s.assignments?.some((a) => a.profileId === profileId)
-        );
-        // Only eligible (>24hr)
-        const cutoff = Date.now() + 24 * 60 * 60 * 1000;
-        const eligible = assigned.filter(
-          (s: ShiftForDrop) => new Date(s.startTime).getTime() > cutoff
-        );
-        setMyShifts(eligible);
-      } catch {
-        // Silently fail — the swap form handles its own fetch
-      } finally {
-        setShiftsLoading(false);
+      const res = await fetch(`/api/shifts?weekStart=${weekStart}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to load shifts");
       }
-    }
-    loadShifts();
-  }, [profileId]);
+
+      const allShifts = data.shifts ?? data.data ?? data ?? [];
+      const assigned = allShifts.filter((s: ShiftForDrop) =>
+        s.assignments?.some((a) => a.profileId === profileId)
+      );
+      const cutoff = Date.now() + 24 * 60 * 60 * 1000;
+
+      return assigned.filter(
+        (s: ShiftForDrop) => new Date(s.startTime).getTime() > cutoff
+      );
+    },
+  });
 
   function openDrop(shift: ShiftForDrop) {
     setDropShift(shift);

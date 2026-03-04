@@ -1,5 +1,6 @@
 "use client";
 
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -19,8 +20,6 @@ import {
 import type { ManagedLocation } from "@/lib/dashboard-context";
 import { Loader2, UserPlus } from "lucide-react";
 
-// ─── Types ───────────────────────────────────────────────
-
 const SKILLS = ["BARTENDER", "LINE_COOK", "SERVER", "HOST"] as const;
 const ROLES = ["STAFF", "MANAGER"] as const;
 
@@ -29,13 +28,10 @@ interface InviteDialogProps {
   onInvited?: () => void;
 }
 
-// ─── Component ───────────────────────────────────────────
-
 export function InviteDialog({ locations, onInvited }: InviteDialogProps) {
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
 
-  // Form state
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState<(typeof ROLES)[number]>("STAFF");
@@ -64,24 +60,19 @@ export function InviteDialog({ locations, onInvited }: InviteDialogProps) {
     );
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!email || !name) return;
-
-    setSubmitting(true);
-    try {
+  const inviteMutation = useMutation({
+    mutationFn: async (payload: {
+      email: string;
+      name: string;
+      role: (typeof ROLES)[number];
+      skills?: string[];
+      locationIds?: string[];
+      desiredHours?: number;
+    }) => {
       const res = await fetch("/api/auth/invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email,
-          name,
-          role,
-          skills: role === "STAFF" ? selectedSkills : undefined,
-          locationIds:
-            selectedLocations.length > 0 ? selectedLocations : undefined,
-          desiredHours: desiredHours ? parseInt(desiredHours, 10) : undefined,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -89,17 +80,36 @@ export function InviteDialog({ locations, onInvited }: InviteDialogProps) {
         throw new Error(data.error ?? "Failed to send invite");
       }
 
-      toast.success(`Invite sent to ${email}`);
+      return payload;
+    },
+    onSuccess: (payload) => {
+      toast.success(`Invite sent to ${payload.email}`);
       resetForm();
       setOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
       onInvited?.();
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to send invite"
-      );
-    } finally {
-      setSubmitting(false);
-    }
+    },
+    onError: (mutationError) => {
+      const message =
+        mutationError instanceof Error
+          ? mutationError.message
+          : "Failed to send invite";
+      toast.error(message);
+    },
+  });
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email || !name) return;
+
+    await inviteMutation.mutateAsync({
+      email,
+      name,
+      role,
+      skills: role === "STAFF" ? selectedSkills : undefined,
+      locationIds: selectedLocations.length > 0 ? selectedLocations : undefined,
+      desiredHours: desiredHours ? parseInt(desiredHours, 10) : undefined,
+    });
   }
 
   return (
@@ -115,13 +125,11 @@ export function InviteDialog({ locations, onInvited }: InviteDialogProps) {
           <DialogHeader>
             <DialogTitle>Invite a New User</DialogTitle>
             <DialogDescription>
-              Send an email invitation. They&apos;ll set their password on first
-              login.
+              Send an email invitation. They&apos;ll set their password on first login.
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 py-4">
-            {/* Name */}
             <div className="grid gap-1.5">
               <Label htmlFor="invite-name">Full Name</Label>
               <Input
@@ -133,7 +141,6 @@ export function InviteDialog({ locations, onInvited }: InviteDialogProps) {
               />
             </div>
 
-            {/* Email */}
             <div className="grid gap-1.5">
               <Label htmlFor="invite-email">Email</Label>
               <Input
@@ -146,7 +153,6 @@ export function InviteDialog({ locations, onInvited }: InviteDialogProps) {
               />
             </div>
 
-            {/* Role */}
             <div className="grid gap-1.5">
               <Label>Role</Label>
               <div className="flex gap-2">
@@ -164,7 +170,6 @@ export function InviteDialog({ locations, onInvited }: InviteDialogProps) {
               </div>
             </div>
 
-            {/* Skills (staff only) */}
             {role === "STAFF" && (
               <div className="grid gap-1.5">
                 <Label>Skills</Label>
@@ -186,38 +191,27 @@ export function InviteDialog({ locations, onInvited }: InviteDialogProps) {
               </div>
             )}
 
-            {/* Locations */}
             {locations.length > 0 && (
               <div className="grid gap-1.5">
-                <Label>
-                  {role === "STAFF" ? "Certify at" : "Manage"} Locations
-                </Label>
+                <Label>{role === "STAFF" ? "Certify at" : "Manage"} Locations</Label>
                 <div className="space-y-2">
                   {locations.map((loc) => (
-                    <label
-                      key={loc.id}
-                      className="flex items-center gap-2 cursor-pointer"
-                    >
+                    <label key={loc.id} className="flex items-center gap-2 cursor-pointer">
                       <Checkbox
                         checked={selectedLocations.includes(loc.id)}
                         onCheckedChange={() => toggleLocation(loc.id)}
                       />
                       <span className="text-sm">{loc.name}</span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {loc.timezone}
-                      </span>
+                      <span className="text-[10px] text-muted-foreground">{loc.timezone}</span>
                     </label>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* Desired hours (staff only) */}
             {role === "STAFF" && (
               <div className="grid gap-1.5">
-                <Label htmlFor="invite-hours">
-                  Desired Weekly Hours (optional)
-                </Label>
+                <Label htmlFor="invite-hours">Desired Weekly Hours (optional)</Label>
                 <Input
                   id="invite-hours"
                   type="number"
@@ -232,18 +226,11 @@ export function InviteDialog({ locations, onInvited }: InviteDialogProps) {
           </div>
 
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setOpen(false)}
-              disabled={submitting}
-            >
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={inviteMutation.isPending}>
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting || !email || !name}>
-              {submitting && (
-                <Loader2 className="size-4 animate-spin mr-2" />
-              )}
+            <Button type="submit" disabled={inviteMutation.isPending || !email || !name}>
+              {inviteMutation.isPending && <Loader2 className="size-4 animate-spin mr-2" />}
               Send Invite
             </Button>
           </DialogFooter>

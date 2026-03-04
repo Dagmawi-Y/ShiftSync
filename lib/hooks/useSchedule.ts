@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRealtimeSubscription } from "./useRealtimeSubscription";
 
@@ -32,10 +33,31 @@ interface Shift {
  * — preventing them from trying to assign the same person.
  */
 export function useSchedule(locationId: string, weekStart: string) {
-  const [shifts, setShifts] = useState<Shift[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [lastUpdatedShiftId, setLastUpdatedShiftId] = useState<string | null>(null);
+  const queryKey = ["schedule", locationId, weekStart] as const;
+
+  const {
+    data: shifts = [],
+    isLoading,
+    error,
+    refetch,
+  } = useQuery<Shift[]>({
+    queryKey,
+    enabled: Boolean(locationId),
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/shifts?locationId=${locationId}&weekStart=${weekStart}`
+      );
+      const json = await res.json();
+
+      if (!res.ok || !json.success) {
+        throw new Error(json.error ?? "Failed to fetch schedule");
+      }
+
+      return json.data;
+    },
+  });
 
   const weekStartMs = new Date(weekStart).getTime();
   const weekEndMs = weekStartMs + 7 * 24 * 60 * 60 * 1000;
@@ -46,35 +68,16 @@ export function useSchedule(locationId: string, weekStart: string) {
   );
   const refetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchSchedule = useCallback(async () => {
-    try {
-      const res = await fetch(
-        `/api/shifts?locationId=${locationId}&weekStart=${weekStart}`
-      );
-      const json = await res.json();
-      if (json.success) setShifts(json.data);
-      else setError(json.error);
-    } catch {
-      setError("Failed to fetch schedule");
-    } finally {
-      setLoading(false);
-    }
-  }, [locationId, weekStart]);
-
-  useEffect(() => {
-    fetchSchedule();
-  }, [fetchSchedule]);
-
   const queueRefetch = useCallback(() => {
     if (refetchTimeoutRef.current) {
       clearTimeout(refetchTimeoutRef.current);
     }
 
     refetchTimeoutRef.current = setTimeout(() => {
-      fetchSchedule();
+      queryClient.invalidateQueries({ queryKey });
       refetchTimeoutRef.current = null;
     }, 150);
-  }, [fetchSchedule]);
+  }, [queryClient, queryKey]);
 
   useEffect(() => {
     return () => {
@@ -131,5 +134,11 @@ export function useSchedule(locationId: string, weekStart: string) {
     },
   });
 
-  return { shifts, loading, error, lastUpdatedShiftId, refetch: fetchSchedule };
+  return {
+    shifts,
+    loading: isLoading,
+    error: error instanceof Error ? error.message : null,
+    lastUpdatedShiftId,
+    refetch,
+  };
 }

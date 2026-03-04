@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,101 +35,107 @@ interface SwapRequestFormProps {
 // ─── Component ───────────────────────────────────────────
 
 export function SwapRequestForm({ profileId, onSubmitted }: SwapRequestFormProps) {
-  const [shifts, setShifts] = useState<ShiftForSwap[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [selectedShift, setSelectedShift] = useState<ShiftForSwap | null>(null);
-  const [colleagues, setColleagues] = useState<StaffMember[]>([]);
-  const [loadingColleagues, setLoadingColleagues] = useState(false);
   const [selectedColleague, setSelectedColleague] = useState<string | null>(null);
   const [note, setNote] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
-  // ── Fetch user's upcoming assigned shifts ────────────
-  useEffect(() => {
-    async function fetchShifts() {
-      try {
-        const now = new Date();
-        const weekStart = new Date(
-          now.getFullYear(),
-          now.getMonth(),
-          now.getDate()
-        ).toISOString();
-        const res = await fetch(`/api/shifts?weekStart=${weekStart}`);
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-        const allShifts = data.shifts ?? data.data ?? data ?? [];
-        if (!Array.isArray(allShifts)) {
-          throw new Error("Unexpected shifts response");
-        }
-        // Filter to only shifts where the current user is assigned
-        const myShifts = allShifts.filter(
-          (s: ShiftForSwap) =>
-            s.assignments?.some((a) => a.profileId === profileId)
-        );
-        // Only future shifts (> 24hr from now)
-        const cutoff = Date.now() + 24 * 60 * 60 * 1000;
-        const eligible = myShifts.filter(
-          (s: ShiftForSwap) => new Date(s.startTime).getTime() > cutoff
-        );
-        setShifts(eligible);
-      } catch {
-        toast.error("Failed to load your shifts");
-      } finally {
-        setLoading(false);
+  const {
+    data: shifts = [],
+    isLoading: loading,
+    error: shiftsError,
+  } = useQuery<ShiftForSwap[]>({
+    queryKey: ["staff-eligible-shifts", profileId],
+    queryFn: async () => {
+      const now = new Date();
+      const weekStart = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate()
+      ).toISOString();
+
+      const res = await fetch(`/api/shifts?weekStart=${weekStart}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to load your shifts");
       }
-    }
-    fetchShifts();
-  }, [profileId]);
 
-  // ── When a shift is selected, fetch qualified colleagues ──
-  useEffect(() => {
-    if (!selectedShift) {
-      setColleagues([]);
-      setSelectedColleague(null);
-      return;
-    }
-
-    async function fetchColleagues() {
-      setLoadingColleagues(true);
-      try {
-        const skill = selectedShift!.requiredSkill;
-        const locationId = selectedShift!.location.id;
-        const params = new URLSearchParams({ skill, locationId });
-        const res = await fetch(`/api/staff?${params.toString()}`);
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-        const staff = data.staff ?? data.data ?? data ?? [];
-        if (!Array.isArray(staff)) {
-          throw new Error("Unexpected staff response");
-        }
-        // Exclude self
-        const others = staff.filter(
-          (s: StaffMember) => s.id !== profileId
-        );
-        setColleagues(others);
-      } catch {
-        toast.error("Failed to load colleagues");
-      } finally {
-        setLoadingColleagues(false);
+      const allShifts = data.shifts ?? data.data ?? data ?? [];
+      if (!Array.isArray(allShifts)) {
+        throw new Error("Unexpected shifts response");
       }
+
+      const myShifts = allShifts.filter(
+        (s: ShiftForSwap) => s.assignments?.some((a) => a.profileId === profileId)
+      );
+      const cutoff = Date.now() + 24 * 60 * 60 * 1000;
+
+      return myShifts.filter(
+        (s: ShiftForSwap) => new Date(s.startTime).getTime() > cutoff
+      );
+    },
+  });
+
+  const {
+    data: colleagues = [],
+    isLoading: loadingColleagues,
+    error: colleaguesError,
+  } = useQuery<StaffMember[]>({
+    queryKey: [
+      "swap-colleagues",
+      profileId,
+      selectedShift?.location.id ?? "none",
+      selectedShift?.requiredSkill ?? "none",
+    ],
+    enabled: Boolean(selectedShift),
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        skill: selectedShift!.requiredSkill,
+        locationId: selectedShift!.location.id,
+      });
+      const res = await fetch(`/api/staff?${params.toString()}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to load colleagues");
+      }
+
+      const staff = data.staff ?? data.data ?? data ?? [];
+      if (!Array.isArray(staff)) {
+        throw new Error("Unexpected staff response");
+      }
+
+      return staff.filter((s: StaffMember) => s.id !== profileId);
+    },
+  });
+
+  useEffect(() => {
+    if (shiftsError instanceof Error) {
+      toast.error(shiftsError.message);
     }
-    fetchColleagues();
-  }, [selectedShift, profileId]);
+  }, [shiftsError]);
 
-  // ── Submit swap request ───────────────────────────────
-  async function handleSubmit() {
-    if (!selectedShift || !selectedColleague) return;
+  useEffect(() => {
+    if (colleaguesError instanceof Error) {
+      toast.error(colleaguesError.message);
+    }
+  }, [colleaguesError]);
 
-    setSubmitting(true);
-    try {
+  useEffect(() => {
+    setSelectedColleague(null);
+  }, [selectedShift]);
+
+  const submitMutation = useMutation({
+    mutationFn: async (payload: {
+      shiftId: string;
+      receiverId: string;
+      initiatorNote?: string;
+    }) => {
       const res = await fetch("/api/swaps", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          shiftId: selectedShift.id,
-          receiverId: selectedColleague,
-          initiatorNote: note || undefined,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -136,18 +143,41 @@ export function SwapRequestForm({ profileId, onSubmitted }: SwapRequestFormProps
         throw new Error(data.error ?? "Failed to submit swap request");
       }
 
+      return res.json();
+    },
+    onSuccess: () => {
       toast.success("Swap request sent!");
       setSelectedShift(null);
       setSelectedColleague(null);
       setNote("");
+      queryClient.invalidateQueries({ queryKey: ["staff-swaps"] });
+      queryClient.invalidateQueries({ queryKey: ["manager-swaps"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-eligible-shifts", profileId] });
+      queryClient.invalidateQueries({ queryKey: ["staff-drop-shifts", profileId] });
       onSubmitted?.();
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to submit swap request"
-      );
-    } finally {
-      setSubmitting(false);
-    }
+    },
+    onError: (mutationError) => {
+      const message =
+        mutationError instanceof Error
+          ? mutationError.message
+          : "Failed to submit swap request";
+      toast.error(message);
+    },
+  });
+
+  const canSubmit = useMemo(
+    () => Boolean(selectedShift && selectedColleague && !submitMutation.isPending),
+    [selectedShift, selectedColleague, submitMutation.isPending]
+  );
+
+  // ── Submit swap request ───────────────────────────────
+  async function handleSubmit() {
+    if (!selectedShift || !selectedColleague) return;
+    await submitMutation.mutateAsync({
+      shiftId: selectedShift.id,
+      receiverId: selectedColleague,
+      initiatorNote: note || undefined,
+    });
   }
 
   return (
@@ -284,10 +314,10 @@ export function SwapRequestForm({ profileId, onSubmitted }: SwapRequestFormProps
 
             <Button
               onClick={handleSubmit}
-              disabled={submitting}
+              disabled={!canSubmit}
               className="w-full"
             >
-              {submitting ? (
+              {submitMutation.isPending ? (
                 <Loader2 className="size-4 animate-spin mr-2" />
               ) : (
                 <Send className="size-4 mr-2" />

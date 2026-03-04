@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { useDashboard } from "@/lib/dashboard-context";
 import { toast } from "sonner";
 import { format, formatDistanceToNow } from "date-fns";
@@ -81,9 +82,30 @@ const statusConfig: Record<string, { label: string; variant: "default" | "second
 
 export default function ManagerSwapsPage() {
   const { selectedLocationId } = useDashboard();
-  const [swaps, setSwaps] = useState<SwapRecord[]>([]);
-  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const queryClient = useQueryClient();
+  const queryKey = ["manager-swaps", statusFilter] as const;
+
+  const {
+    data: swaps = [],
+    isLoading: loading,
+    error,
+  } = useQuery<SwapRecord[]>({
+    queryKey,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (statusFilter !== "all") params.set("status", statusFilter);
+
+      const res = await fetch(`/api/swaps?${params}`);
+      const json = await res.json();
+
+      if (!res.ok) {
+        throw new Error(json.error ?? "Failed to load swap requests");
+      }
+
+      return json.data ?? [];
+    },
+  });
 
   // Dialog state
   const [actionTarget, setActionTarget] = useState<{
@@ -91,33 +113,65 @@ export default function ManagerSwapsPage() {
     action: "APPROVE" | "REJECT";
   } | null>(null);
   const [managerNote, setManagerNote] = useState("");
-  const [acting, setActing] = useState(false);
-
-  const fetchSwaps = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (statusFilter !== "all") params.set("status", statusFilter);
-      const res = await fetch(`/api/swaps?${params}`);
-      if (!res.ok) throw new Error();
-      const json = await res.json();
-      setSwaps(json.data ?? []);
-    } catch {
-      toast.error("Failed to load swap requests");
-    } finally {
-      setLoading(false);
-    }
-  }, [statusFilter]);
 
   useEffect(() => {
-    fetchSwaps();
-  }, [fetchSwaps]);
+    if (error instanceof Error) {
+      toast.error(error.message);
+    }
+  }, [error]);
+
+  const actionMutation = useMutation({
+    mutationFn: async ({
+      swapId,
+      action,
+      managerNote,
+    }: {
+      swapId: string;
+      action: "APPROVE" | "REJECT";
+      managerNote: string;
+    }) => {
+      const res = await fetch(`/api/swaps/${swapId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          ...(managerNote ? { managerNote } : {}),
+        }),
+      });
+      const json = await res.json();
+
+      if (!res.ok) {
+        throw new Error(json.error ?? "Action failed");
+      }
+
+      return json;
+    },
+    onSuccess: (_data, variables) => {
+      toast.success(
+        variables.action === "APPROVE" ? "Swap approved" : "Swap rejected"
+      );
+      setActionTarget(null);
+      setManagerNote("");
+      queryClient.invalidateQueries({ queryKey: ["manager-swaps"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-swaps"] });
+    },
+    onError: (mutationError) => {
+      const message =
+        mutationError instanceof Error
+          ? mutationError.message
+          : "Something went wrong";
+      toast.error(message);
+    },
+  });
 
   // Real-time: auto-refresh when any SwapRequest changes
   useRealtimeSubscription({
     table: "SwapRequest",
     event: "*",
-    onchange: () => fetchSwaps(),
+    onchange: () => {
+      queryClient.invalidateQueries({ queryKey: ["manager-swaps"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-swaps"] });
+    },
   });
 
   // Optionally filter by selected location client-side (API returns all managed locations)
@@ -136,33 +190,11 @@ export default function ManagerSwapsPage() {
 
   async function handleAction() {
     if (!actionTarget) return;
-    setActing(true);
-    try {
-      const res = await fetch(`/api/swaps/${actionTarget.swap.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: actionTarget.action,
-          ...(managerNote ? { managerNote } : {}),
-        }),
-      });
-      if (!res.ok) {
-        const json = await res.json();
-        throw new Error(json.error ?? "Action failed");
-      }
-      toast.success(
-        actionTarget.action === "APPROVE"
-          ? "Swap approved"
-          : "Swap rejected"
-      );
-      setActionTarget(null);
-      setManagerNote("");
-      fetchSwaps();
-    } catch (e: any) {
-      toast.error(e.message ?? "Something went wrong");
-    } finally {
-      setActing(false);
-    }
+    await actionMutation.mutateAsync({
+      swapId: actionTarget.swap.id,
+      action: actionTarget.action,
+      managerNote,
+    });
   }
 
   return (
@@ -182,7 +214,7 @@ export default function ManagerSwapsPage() {
           value={statusFilter}
           onValueChange={(v) => setStatusFilter(v as StatusFilter)}
         >
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="w-45">
             <Filter className="size-3.5 mr-1.5 text-muted-foreground" />
             <SelectValue placeholder="All Statuses" />
           </SelectTrigger>
@@ -339,9 +371,9 @@ export default function ManagerSwapsPage() {
                 actionTarget?.action === "APPROVE" ? "default" : "destructive"
               }
               onClick={handleAction}
-              disabled={acting}
+              disabled={actionMutation.isPending}
             >
-              {acting
+              {actionMutation.isPending
                 ? "Processing…"
                 : actionTarget?.action === "APPROVE"
                   ? "Approve"

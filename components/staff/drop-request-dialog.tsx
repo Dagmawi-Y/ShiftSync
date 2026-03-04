@@ -1,5 +1,6 @@
 "use client";
 
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -41,22 +42,15 @@ export function DropRequestDialog({
   onOpenChange,
   onSubmitted,
 }: DropRequestDialogProps) {
+  const queryClient = useQueryClient();
   const [note, setNote] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
-  async function handleDrop() {
-    if (!shift) return;
-
-    setSubmitting(true);
-    try {
+  const submitMutation = useMutation({
+    mutationFn: async (payload: { shiftId: string; initiatorNote?: string }) => {
       const res = await fetch("/api/swaps", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          shiftId: shift.id,
-          // No receiverId → drop request
-          initiatorNote: note || undefined,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -64,17 +58,32 @@ export function DropRequestDialog({
         throw new Error(data.error ?? "Failed to submit drop request");
       }
 
+      return res.json();
+    },
+    onSuccess: () => {
       toast.success("Drop request submitted — managers will be notified.");
       setNote("");
       onOpenChange(false);
+      queryClient.invalidateQueries({ queryKey: ["staff-swaps"] });
+      queryClient.invalidateQueries({ queryKey: ["manager-swaps"] });
+      queryClient.invalidateQueries({ queryKey: ["available-drops"] });
       onSubmitted?.();
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to submit drop request"
-      );
-    } finally {
-      setSubmitting(false);
-    }
+    },
+    onError: (mutationError) => {
+      const message =
+        mutationError instanceof Error
+          ? mutationError.message
+          : "Failed to submit drop request";
+      toast.error(message);
+    },
+  });
+
+  async function handleDrop() {
+    if (!shift) return;
+    await submitMutation.mutateAsync({
+      shiftId: shift.id,
+      initiatorNote: note || undefined,
+    });
   }
 
   if (!shift) return null;
@@ -137,16 +146,16 @@ export function DropRequestDialog({
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            disabled={submitting}
+            disabled={submitMutation.isPending}
           >
             Cancel
           </Button>
           <Button
             variant="destructive"
             onClick={handleDrop}
-            disabled={submitting}
+            disabled={submitMutation.isPending}
           >
-            {submitting && (
+            {submitMutation.isPending && (
               <Loader2 className="size-4 animate-spin mr-2" />
             )}
             Drop Shift

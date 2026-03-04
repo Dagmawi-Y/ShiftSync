@@ -1,7 +1,7 @@
 // lib/hooks/useNotifications.ts
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRealtimeSubscription } from "./useRealtimeSubscription";
 
 interface Notification {
@@ -23,19 +23,22 @@ interface Notification {
  * into the Notification table for this user.
  */
 export function useNotifications(profileId: string) {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const queryKey = ["notifications", profileId] as const;
 
-  const fetchNotifications = useCallback(async () => {
-    const res = await fetch("/api/notifications");
-    const json = await res.json();
-    if (json.success) setNotifications(json.data);
-    setLoading(false);
-  }, []);
+  const { data: notifications = [], isLoading: loading } = useQuery<Notification[]>({
+    queryKey,
+    queryFn: async () => {
+      const res = await fetch("/api/notifications");
+      const json = await res.json();
 
-  useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
+      if (!res.ok || !json.success) {
+        throw new Error(json.error ?? "Failed to load notifications");
+      }
+
+      return json.data;
+    },
+  });
 
   // Only subscribe to notifications for THIS user
   useRealtimeSubscription({
@@ -43,16 +46,28 @@ export function useNotifications(profileId: string) {
     event: "INSERT",
     filter: `profileId=eq.${profileId}`,
     onchange: (payload) => {
-      // Prepend the new notification directly — no need to refetch
       const newNotification = payload.new as Notification;
-      setNotifications((prev) => [newNotification, ...prev]);
+      queryClient.setQueryData<Notification[]>(queryKey, (prev = []) => [
+        newNotification,
+        ...prev,
+      ]);
     },
   });
 
-  const markAllRead = useCallback(async () => {
-    await fetch("/api/notifications", { method: "PATCH" });
-    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-  }, []);
+  const markAllReadMutation = useMutation({
+    mutationFn: async () => {
+      await fetch("/api/notifications", { method: "PATCH" });
+    },
+    onSuccess: () => {
+      queryClient.setQueryData<Notification[]>(queryKey, (prev = []) =>
+        prev.map((n) => ({ ...n, isRead: true }))
+      );
+    },
+  });
+
+  const markAllRead = () => {
+    markAllReadMutation.mutate();
+  };
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { useDashboard } from "@/lib/dashboard-context";
 import { startOfWeek, endOfWeek } from "date-fns";
 import {
@@ -29,15 +30,13 @@ interface KpiData {
 
 export default function ManagerDashboardPage() {
   const { locations, selectedLocationId } = useDashboard();
-  const [kpis, setKpis] = useState<KpiData | null>(null);
-  const [loading, setLoading] = useState(true);
 
   const locationId = selectedLocationId ?? locations[0]?.id ?? "";
 
-  const fetchKpis = useCallback(async () => {
-    if (!locationId) return;
-    setLoading(true);
-    try {
+  const { data: kpis, isLoading: loading } = useQuery<KpiData>({
+    queryKey: ["manager-dashboard-kpis", locationId],
+    enabled: Boolean(locationId),
+    queryFn: async () => {
       const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
       const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
 
@@ -60,7 +59,7 @@ export default function ManagerDashboardPage() {
           analyticsRes.json(),
         ]);
 
-      setKpis({
+      return {
         weekShifts: Array.isArray(shiftsJson.data)
           ? shiftsJson.data.length
           : 0,
@@ -75,17 +74,9 @@ export default function ManagerDashboardPage() {
             (o: { isOvertime: boolean; isWarning: boolean }) =>
               o.isOvertime || o.isWarning
           )?.length ?? 0,
-      });
-    } catch {
-      // Partial data is OK
-    } finally {
-      setLoading(false);
-    }
-  }, [locationId]);
-
-  useEffect(() => {
-    fetchKpis();
-  }, [fetchKpis]);
+      };
+    },
+  });
 
   // Filter locations to just the selected one for on-duty grid
   const displayLocations = locations.filter(

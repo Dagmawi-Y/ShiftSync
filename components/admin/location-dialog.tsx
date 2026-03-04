@@ -1,5 +1,6 @@
 "use client";
 
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -60,8 +61,8 @@ interface LocationDialogProps {
 // ─── Component ───────────────────────────────────────────
 
 export function LocationDialog({ mode, initial, onSaved }: LocationDialogProps) {
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
 
   const [name, setName] = useState(initial?.name ?? "");
   const [address, setAddress] = useState(initial?.address ?? "");
@@ -77,11 +78,14 @@ export function LocationDialog({ mode, initial, onSaved }: LocationDialogProps) 
     e.preventDefault();
     if (!name.trim() || !address.trim() || !timezone) return;
 
-    setSubmitting(true);
-    try {
-      const payload: Record<string, string> = { name, address, timezone };
-      if (mode === "edit" && initial?.id) payload.id = initial.id;
+    const payload: Record<string, string> = { name, address, timezone };
+    if (mode === "edit" && initial?.id) payload.id = initial.id;
 
+    await locationMutation.mutateAsync(payload);
+  }
+
+  const locationMutation = useMutation({
+    mutationFn: async (payload: Record<string, string>) => {
       const res = await fetch("/api/locations", {
         method: mode === "create" ? "POST" : "PUT",
         headers: { "Content-Type": "application/json" },
@@ -93,19 +97,23 @@ export function LocationDialog({ mode, initial, onSaved }: LocationDialogProps) 
         throw new Error(json.error ?? "Request failed");
       }
 
+      return res.json();
+    },
+    onSuccess: () => {
       toast.success(
         mode === "create" ? "Location created" : "Location updated"
       );
       setOpen(false);
       resetForm();
+      queryClient.invalidateQueries({ queryKey: ["admin-locations"] });
       onSaved?.();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Something went wrong";
+    },
+    onError: (mutationError: unknown) => {
+      const msg =
+        mutationError instanceof Error ? mutationError.message : "Something went wrong";
       toast.error(msg);
-    } finally {
-      setSubmitting(false);
-    }
-  }
+    },
+  });
 
   return (
     <Dialog
@@ -180,8 +188,10 @@ export function LocationDialog({ mode, initial, onSaved }: LocationDialogProps) 
           </div>
 
           <DialogFooter>
-            <Button type="submit" disabled={submitting}>
-              {submitting && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+            <Button type="submit" disabled={locationMutation.isPending}>
+              {locationMutation.isPending && (
+                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+              )}
               {mode === "create" ? "Create" : "Save Changes"}
             </Button>
           </DialogFooter>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Send, Eye, EyeOff } from "lucide-react";
@@ -18,9 +18,6 @@ interface PublishBarProps {
 // ─── Component ───────────────────────────────────────────
 
 export function PublishBar({ shifts, onPublished }: PublishBarProps) {
-  const [publishing, setPublishing] = useState(false);
-  const [unpublishing, setUnpublishing] = useState(false);
-
   const draftShifts = shifts.filter((s) => !s.isPublished);
   const publishedShifts = shifts.filter((s) => s.isPublished);
 
@@ -31,68 +28,55 @@ export function PublishBar({ shifts, onPublished }: PublishBarProps) {
 
   if (draftShifts.length === 0 && publishedShifts.length === 0) return null;
 
-  const handlePublishAll = async () => {
-    if (draftShifts.length === 0) return;
-    setPublishing(true);
-    try {
+  const publishMutation = useMutation({
+    mutationFn: async ({ shiftIds, isPublished }: { shiftIds: string[]; isPublished: boolean }) => {
       const results = await Promise.allSettled(
-        draftShifts.map((shift) =>
-          fetch(`/api/shifts/${shift.id}`, {
+        shiftIds.map((id) =>
+          fetch(`/api/shifts/${id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ isPublished: true }),
+            body: JSON.stringify({ isPublished }),
           })
         )
       );
 
-      const succeeded = results.filter(
-        (r) => r.status === "fulfilled"
-      ).length;
-      const failed = results.filter((r) => r.status === "rejected").length;
-
+      return {
+        succeeded: results.filter((r) => r.status === "fulfilled").length,
+        failed: results.filter((r) => r.status === "rejected").length,
+        isPublished,
+      };
+    },
+    onSuccess: ({ succeeded, failed, isPublished }) => {
       if (failed > 0) {
-        toast.warning(`Published ${succeeded} shifts, ${failed} failed`);
+        toast.warning(
+          `${isPublished ? "Published" : "Unpublished"} ${succeeded} shifts, ${failed} failed`
+        );
       } else {
-        toast.success(`Published ${succeeded} shift${succeeded > 1 ? "s" : ""}`);
+        toast.success(
+          `${isPublished ? "Published" : "Unpublished"} ${succeeded} shift${succeeded > 1 ? "s" : ""}`
+        );
       }
       onPublished();
-    } catch {
-      toast.error("Failed to publish shifts");
-    } finally {
-      setPublishing(false);
-    }
+    },
+    onError: () => {
+      toast.error("Failed to update shift publish status");
+    },
+  });
+
+  const handlePublishAll = async () => {
+    if (draftShifts.length === 0) return;
+    await publishMutation.mutateAsync({
+      shiftIds: draftShifts.map((shift) => shift.id),
+      isPublished: true,
+    });
   };
 
   const handleUnpublishAll = async () => {
     if (publishedShifts.length === 0) return;
-    setUnpublishing(true);
-    try {
-      const results = await Promise.allSettled(
-        publishedShifts.map((shift) =>
-          fetch(`/api/shifts/${shift.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ isPublished: false }),
-          })
-        )
-      );
-
-      const succeeded = results.filter(
-        (r) => r.status === "fulfilled"
-      ).length;
-      const failed = results.filter((r) => r.status === "rejected").length;
-
-      if (failed > 0) {
-        toast.warning(`Unpublished ${succeeded} shifts, ${failed} failed`);
-      } else {
-        toast.success(`Unpublished ${succeeded} shift${succeeded > 1 ? "s" : ""}`);
-      }
-      onPublished();
-    } catch {
-      toast.error("Failed to unpublish shifts");
-    } finally {
-      setUnpublishing(false);
-    }
+    await publishMutation.mutateAsync({
+      shiftIds: publishedShifts.map((shift) => shift.id),
+      isPublished: false,
+    });
   };
 
   return (
@@ -130,9 +114,9 @@ export function PublishBar({ shifts, onPublished }: PublishBarProps) {
                 size="sm"
                 variant="outline"
                 onClick={handleUnpublishAll}
-                disabled={unpublishing}
+                disabled={publishMutation.isPending}
               >
-                {unpublishing ? (
+                {publishMutation.isPending ? (
                   <Loader2 className="size-3.5 animate-spin" />
                 ) : (
                   <EyeOff className="size-3.5" />
@@ -144,9 +128,9 @@ export function PublishBar({ shifts, onPublished }: PublishBarProps) {
               <Button
                 size="sm"
                 onClick={handlePublishAll}
-                disabled={publishing}
+                disabled={publishMutation.isPending}
               >
-                {publishing ? (
+                {publishMutation.isPending ? (
                   <Loader2 className="size-3.5 animate-spin" />
                 ) : (
                   <Send className="size-3.5" />

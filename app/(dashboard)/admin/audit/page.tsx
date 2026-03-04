@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { useDashboard } from "@/lib/dashboard-context";
 import {
   startOfWeek,
@@ -17,8 +18,6 @@ import { toast } from "sonner";
 export default function AdminAuditPage() {
   const { selectedLocationId } = useDashboard();
   const [weekOffset, setWeekOffset] = useState(0);
-  const [logs, setLogs] = useState<AuditEntry[]>([]);
-  const [loading, setLoading] = useState(true);
 
   const weekStart = startOfWeek(subWeeks(new Date(), weekOffset), {
     weekStartsOn: 1,
@@ -27,9 +26,14 @@ export default function AdminAuditPage() {
     weekStartsOn: 1,
   });
 
-  const fetchLogs = useCallback(async () => {
-    setLoading(true);
-    try {
+  const { data: logs = [], isLoading: loading } = useQuery<AuditEntry[]>({
+    queryKey: [
+      "admin-audit",
+      selectedLocationId ?? "all",
+      weekStart.toISOString(),
+      weekEnd.toISOString(),
+    ],
+    queryFn: async () => {
       const params = new URLSearchParams({
         from: weekStart.toISOString(),
         to: weekEnd.toISOString(),
@@ -39,19 +43,13 @@ export default function AdminAuditPage() {
       }
 
       const res = await fetch(`/api/audit?${params}`);
-      if (!res.ok) throw new Error();
       const json = await res.json();
-      setLogs(json.data ?? []);
-    } catch {
-      toast.error("Failed to load audit logs");
-    } finally {
-      setLoading(false);
-    }
-  }, [weekStart.toISOString(), weekEnd.toISOString(), selectedLocationId]);
-
-  useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
+      if (!res.ok) {
+        throw new Error(json.error ?? "Failed to load audit logs");
+      }
+      return json.data ?? [];
+    },
+  });
 
   // CSV export
   function handleExportCsv() {
@@ -106,7 +104,7 @@ export default function AdminAuditPage() {
           >
             <ChevronLeft className="size-4" />
           </Button>
-          <span className="text-sm font-medium min-w-[180px] text-center">
+          <span className="text-sm font-medium min-w-45 text-center">
             {format(weekStart, "MMM d")} – {format(weekEnd, "MMM d, yyyy")}
           </span>
           <Button

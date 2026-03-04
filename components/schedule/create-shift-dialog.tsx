@@ -1,5 +1,6 @@
 "use client";
 
+import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { format } from "date-fns";
 import { Loader2 } from "lucide-react";
@@ -50,7 +51,6 @@ export function CreateShiftDialog({
   defaultDate,
   onCreated,
 }: CreateShiftDialogProps) {
-  const [loading, setLoading] = useState(false);
   const [skill, setSkill] = useState<string>("SERVER");
   const [headcount, setHeadcount] = useState("1");
   const [date, setDate] = useState(
@@ -75,41 +75,56 @@ export function CreateShiftDialog({
     e.preventDefault();
     if (!date || !startTime || !endTime) return;
 
-    setLoading(true);
-    try {
-      const startISO = new Date(`${date}T${startTime}:00`).toISOString();
-      const endISO = new Date(`${date}T${endTime}:00`).toISOString();
+    const startISO = new Date(`${date}T${startTime}:00`).toISOString();
+    const endISO = new Date(`${date}T${endTime}:00`).toISOString();
 
+    await createShiftMutation.mutateAsync({
+      locationId,
+      requiredSkill: skill,
+      headcount: parseInt(headcount, 10),
+      startTime: startISO,
+      endTime: endISO,
+    });
+  };
+
+  const createShiftMutation = useMutation({
+    mutationFn: async (payload: {
+      locationId: string;
+      requiredSkill: string;
+      headcount: number;
+      startTime: string;
+      endTime: string;
+    }) => {
       const res = await fetch("/api/shifts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          locationId,
-          requiredSkill: skill,
-          headcount: parseInt(headcount, 10),
-          startTime: startISO,
-          endTime: endISO,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const json = await res.json();
-      if (json.success) {
-        toast.success("Shift created");
-        onCreated();
-        onOpenChange(false);
-      } else {
-        toast.error(json.error || "Failed to create shift");
+      if (!json.success) {
+        throw new Error(json.error || "Failed to create shift");
       }
-    } catch {
-      toast.error("Failed to create shift");
-    } finally {
-      setLoading(false);
-    }
-  };
+
+      return json;
+    },
+    onSuccess: () => {
+      toast.success("Shift created");
+      onCreated();
+      onOpenChange(false);
+    },
+    onError: (mutationError) => {
+      const message =
+        mutationError instanceof Error
+          ? mutationError.message
+          : "Failed to create shift";
+      toast.error(message);
+    },
+  });
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-106.25">
         <DialogHeader>
           <DialogTitle className="font-display">Create Shift</DialogTitle>
           <DialogDescription>
@@ -189,8 +204,10 @@ export function CreateShiftDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={loading}>
-              {loading && <Loader2 className="size-4 animate-spin" />}
+            <Button type="submit" disabled={createShiftMutation.isPending}>
+              {createShiftMutation.isPending && (
+                <Loader2 className="size-4 animate-spin" />
+              )}
               Create Shift
             </Button>
           </DialogFooter>

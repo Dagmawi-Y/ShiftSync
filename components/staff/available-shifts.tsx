@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,44 +35,42 @@ interface AvailableShiftsProps {
 // ─── Component ───────────────────────────────────────────
 
 export function AvailableShifts({ profileId, onPickedUp }: AvailableShiftsProps) {
-  const [drops, setDrops] = useState<DropShift[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [pickingUp, setPickingUp] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const {
+    data: drops = [],
+    isLoading: loading,
+    error,
+  } = useQuery<DropShift[]>({
+    queryKey: ["available-drops", profileId],
+    queryFn: async () => {
+      const res = await fetch("/api/swaps?status=PENDING_MANAGER&scope=available-drops");
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to load available shifts");
+      }
+
+      const swaps = data.swaps ?? data.data ?? data ?? [];
+      if (!Array.isArray(swaps)) {
+        throw new Error("Unexpected swaps response");
+      }
+
+      return swaps.filter(
+        (s: DropShift & { isDrop: boolean }) => s.isDrop && s.initiator.id !== profileId
+      );
+    },
+  });
 
   useEffect(() => {
-    async function fetchDrops() {
-      try {
-        // Fetch drop requests that are pending manager approval
-        // (isDrop with PENDING_MANAGER status — these are available for pickup)
-        const res = await fetch(
-          "/api/swaps?status=PENDING_MANAGER&scope=available-drops"
-        );
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-        const swaps = data.swaps ?? data.data ?? data ?? [];
-        if (!Array.isArray(swaps)) {
-          throw new Error("Unexpected swaps response");
-        }
-        // Show only drops (isDrop=true) that current user did NOT initiate
-        const available = swaps.filter(
-          (s: DropShift & { isDrop: boolean; initiatorId: string }) =>
-            s.isDrop && s.initiator.id !== profileId
-        );
-        setDrops(available);
-      } catch {
-        toast.error("Failed to load available shifts");
-      } finally {
-        setLoading(false);
-      }
+    if (error instanceof Error) {
+      toast.error(error.message);
     }
-    fetchDrops();
-  }, [profileId]);
+  }, [error]);
 
-  async function handlePickUp(swap: DropShift) {
-    setPickingUp(swap.id);
-    try {
-      // Accept the drop swap — effectively volunteering to take the shift
-      const res = await fetch(`/api/swaps/${swap.id}`, {
+  const pickupMutation = useMutation({
+    mutationFn: async (swapId: string) => {
+      const res = await fetch(`/api/swaps/${swapId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "ACCEPT" }),
@@ -82,16 +81,26 @@ export function AvailableShifts({ profileId, onPickedUp }: AvailableShiftsProps)
         throw new Error(data.error ?? "Failed to pick up shift");
       }
 
+      return res.json();
+    },
+    onSuccess: () => {
       toast.success("You've volunteered for this shift — waiting for manager approval.");
-      setDrops((prev) => prev.filter((d) => d.id !== swap.id));
+      queryClient.invalidateQueries({ queryKey: ["available-drops", profileId] });
+      queryClient.invalidateQueries({ queryKey: ["staff-swaps"] });
+      queryClient.invalidateQueries({ queryKey: ["manager-swaps"] });
       onPickedUp?.();
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Could not pick up shift"
-      );
-    } finally {
-      setPickingUp(null);
-    }
+    },
+    onError: (mutationError) => {
+      const message =
+        mutationError instanceof Error
+          ? mutationError.message
+          : "Could not pick up shift";
+      toast.error(message);
+    },
+  });
+
+  async function handlePickUp(swap: DropShift) {
+    await pickupMutation.mutateAsync(swap.id);
   }
 
   return (
@@ -120,7 +129,8 @@ export function AvailableShifts({ profileId, onPickedUp }: AvailableShiftsProps)
           <div className="space-y-2">
             {drops.map((drop) => {
               const colors = getSkillColor(drop.shift.requiredSkill);
-              const isPickingThis = pickingUp === drop.id;
+              const isPickingThis =
+                pickupMutation.isPending && pickupMutation.variables === drop.id;
 
               return (
                 <div
@@ -158,7 +168,7 @@ export function AvailableShifts({ profileId, onPickedUp }: AvailableShiftsProps)
                   <Button
                     size="sm"
                     onClick={() => handlePickUp(drop)}
-                    disabled={isPickingThis || pickingUp !== null}
+                    disabled={pickupMutation.isPending}
                   >
                     {isPickingThis ? (
                       <Loader2 className="size-3.5 animate-spin mr-1.5" />

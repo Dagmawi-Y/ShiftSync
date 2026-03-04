@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useDashboard } from "@/lib/dashboard-context";
 import { startOfWeek, endOfWeek } from "date-fns";
 import {
@@ -23,11 +23,10 @@ interface KpiData {
 
 export default function AdminDashboardPage() {
   const { locations } = useDashboard();
-  const [kpis, setKpis] = useState<KpiData | null>(null);
-  const [loading, setLoading] = useState(true);
 
-  const fetchKpis = useCallback(async () => {
-    try {
+  const { data: kpis, isLoading: loading } = useQuery<KpiData>({
+    queryKey: ["admin-dashboard-kpis"],
+    queryFn: async () => {
       // Fetch active shifts count
       const activeRes = await fetch("/api/shifts/active");
       const activeJson = await activeRes.json();
@@ -54,22 +53,14 @@ export default function AdminDashboardPage() {
       const analyticsJson = await analyticsRes.json();
       const overtime = analyticsJson.data?.overtimeRisk?.length ?? 0;
 
-      setKpis({
+      return {
         activeShifts,
         staffOnDuty,
         pendingSwaps,
         overtimeRisk: overtime,
-      });
-    } catch {
-      // Partial data is OK
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchKpis();
-  }, [fetchKpis]);
+      };
+    },
+  });
 
   return (
     <div className="space-y-8 max-w-6xl">
