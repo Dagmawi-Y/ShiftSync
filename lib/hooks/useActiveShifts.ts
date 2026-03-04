@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRealtimeSubscription } from "./useRealtimeSubscription";
 
 interface AssignedStaff {
@@ -37,6 +37,12 @@ export function useActiveShifts(locationId?: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const activeShiftIds = useMemo(
+    () => new Set((data?.shifts ?? []).map((shift) => shift.id)),
+    [data]
+  );
+  const refetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const fetchActiveShifts = useCallback(async () => {
     try {
       const params = locationId ? `?locationId=${locationId}` : "";
@@ -56,19 +62,74 @@ export function useActiveShifts(locationId?: string) {
     fetchActiveShifts();
   }, [fetchActiveShifts]);
 
+  const queueRefetch = useCallback(() => {
+    if (refetchTimeoutRef.current) {
+      clearTimeout(refetchTimeoutRef.current);
+    }
+
+    refetchTimeoutRef.current = setTimeout(() => {
+      fetchActiveShifts();
+      refetchTimeoutRef.current = null;
+    }, 150);
+  }, [fetchActiveShifts]);
+
+  useEffect(() => {
+    return () => {
+      if (refetchTimeoutRef.current) {
+        clearTimeout(refetchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const isShiftPotentiallyActive = useCallback(
+    (startTime?: string, endTime?: string) => {
+      if (!startTime || !endTime) return true;
+
+      const now = Date.now();
+      const start = new Date(startTime).getTime();
+      const end = new Date(endTime).getTime();
+
+      if (Number.isNaN(start) || Number.isNaN(end)) return true;
+      return start <= now && end > now;
+    },
+    []
+  );
+
   // Re-fetch when shift rows change
   useRealtimeSubscription({
     table: "Shift",
     event: "*",
     ...(locationId ? { filter: `locationId=eq.${locationId}` } : {}),
-    onchange: fetchActiveShifts,
+    onchange: (payload) => {
+      const record = (payload.new || payload.old) as
+        | { id?: string; startTime?: string; endTime?: string }
+        | null;
+
+      if (!record) {
+        queueRefetch();
+        return;
+      }
+
+      if (
+        (record.id && activeShiftIds.has(record.id)) ||
+        isShiftPotentiallyActive(record.startTime, record.endTime)
+      ) {
+        queueRefetch();
+      }
+    },
   });
 
-  // Re-fetch when assignment rows change (someone added/removed from a shift)
   useRealtimeSubscription({
     table: "ShiftAssignment",
     event: "*",
-    onchange: fetchActiveShifts,
+    onchange: (payload) => {
+      const record = (payload.new || payload.old) as { shiftId?: string } | null;
+      if (!record?.shiftId) return;
+
+      if (activeShiftIds.has(record.shiftId)) {
+        queueRefetch();
+      }
+    },
   });
 
   return { data, loading, error, refetch: fetchActiveShifts };

@@ -1,6 +1,6 @@
 // app/api/swaps/[id]/route.ts
 import { prisma } from "@/lib/prisma";
-import { getAuthProfile, ok, err, validationErr } from "@/lib/apiUtils";
+import { getAuthProfile, managerOwnsLocation, ok, err, validationErr } from "@/lib/apiUtils";
 import { validateAssignment } from "@/lib/services/constraintEngine";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -164,6 +164,11 @@ export async function POST(
     if (profile.role === "STAFF") return err("Only managers can approve swaps", 403);
     if (swap.status !== "PENDING_MANAGER")
       return err("This swap is not awaiting manager approval");
+
+    if (profile.role === "MANAGER") {
+      const owns = await managerOwnsLocation(profile.id, swap.shift.locationId);
+      if (!owns) return err("Forbidden", 403);
+    }
 
     // Final constraint check before committing — state may have changed
     if (swap.receiverId) {

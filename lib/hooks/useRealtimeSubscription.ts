@@ -39,8 +39,12 @@ export function useRealtimeSubscription({
   filter,
   onchange,
 }: SubscriptionOptions) {
-  const supabase = createClient();
   const onchangeRef = useRef(onchange);
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null);
+
+  if (!supabaseRef.current) {
+    supabaseRef.current = createClient();
+  }
 
   // Keep ref in sync without re-subscribing
   useEffect(() => {
@@ -48,7 +52,7 @@ export function useRealtimeSubscription({
   }, [onchange]);
 
   useEffect(() => {
-    const channel = supabase
+    const channel = supabaseRef.current!
       .channel(`${table}-changes-${filter ?? "all"}`)
       .on(
         "postgres_changes",
@@ -64,7 +68,7 @@ export function useRealtimeSubscription({
 
     // Cleanup on unmount
     return () => {
-      supabase.removeChannel(channel);
+      supabaseRef.current?.removeChannel(channel);
     };
   // Only re-subscribe if table, event, or filter changes
   }, [table, event, filter]);

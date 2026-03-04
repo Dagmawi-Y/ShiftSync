@@ -23,7 +23,10 @@ export async function GET(req: NextRequest) {
   const locationId = searchParams.get("locationId");
   const weekStart = searchParams.get("weekStart");
 
-  // Managers can only query their own locations
+  if (profile.role === "MANAGER" && !locationId) {
+    return err("locationId is required for managers", 400);
+  }
+
   if (profile.role === "MANAGER" && locationId) {
     const owns = await managerOwnsLocation(profile.id, locationId);
     if (!owns) return err("Forbidden", 403);

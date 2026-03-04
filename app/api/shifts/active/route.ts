@@ -1,6 +1,6 @@
 // app/api/shifts/active/route.ts
 import { prisma } from "@/lib/prisma";
-import { getAuthProfile, ok, err } from "@/lib/apiUtils";
+import { getAuthProfile, managerOwnsLocation, ok, err } from "@/lib/apiUtils";
 import { NextRequest } from "next/server";
 
 // GET /api/shifts/active?locationId=xxx
@@ -11,6 +11,15 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const locationId = searchParams.get("locationId");
+
+  if (profile.role === "MANAGER" && !locationId) {
+    return err("locationId is required for managers", 400);
+  }
+
+  if (profile.role === "MANAGER" && locationId) {
+    const owns = await managerOwnsLocation(profile.id, locationId);
+    if (!owns) return err("Forbidden", 403);
+  }
 
   const now = new Date();
 

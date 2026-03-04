@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRealtimeSubscription } from "./useRealtimeSubscription";
 
 interface Shift {
@@ -35,8 +35,16 @@ export function useSchedule(locationId: string, weekStart: string) {
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Track when a shift was just updated — UI can flash/highlight it
   const [lastUpdatedShiftId, setLastUpdatedShiftId] = useState<string | null>(null);
+
+  const weekStartMs = new Date(weekStart).getTime();
+  const weekEndMs = weekStartMs + 7 * 24 * 60 * 60 * 1000;
+
+  const scheduleShiftIds = useMemo(
+    () => new Set(shifts.map((shift) => shift.id)),
+    [shifts]
+  );
+  const refetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchSchedule = useCallback(async () => {
     try {
@@ -57,26 +65,69 @@ export function useSchedule(locationId: string, weekStart: string) {
     fetchSchedule();
   }, [fetchSchedule]);
 
+  const queueRefetch = useCallback(() => {
+    if (refetchTimeoutRef.current) {
+      clearTimeout(refetchTimeoutRef.current);
+    }
+
+    refetchTimeoutRef.current = setTimeout(() => {
+      fetchSchedule();
+      refetchTimeoutRef.current = null;
+    }, 150);
+  }, [fetchSchedule]);
+
+  useEffect(() => {
+    return () => {
+      if (refetchTimeoutRef.current) {
+        clearTimeout(refetchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const isShiftInVisibleWeek = useCallback(
+    (startTime?: string | null) => {
+      if (!startTime) return false;
+      const shiftStartMs = new Date(startTime).getTime();
+      return shiftStartMs >= weekStartMs && shiftStartMs < weekEndMs;
+    },
+    [weekEndMs, weekStartMs]
+  );
+
   // Listen for shift changes at this location
   useRealtimeSubscription({
     table: "Shift",
     event: "*",
     filter: `locationId=eq.${locationId}`,
     onchange: (payload) => {
-      // Track which shift changed so the UI can highlight it
-      const record = payload.new as { id?: string } | null;
-      if (record?.id) setLastUpdatedShiftId(record.id);
-      fetchSchedule();
+      const record = (payload.new || payload.old) as
+        | { id?: string; startTime?: string }
+        | null;
+
+      if (!record) return;
+
+      if (record.id) {
+        setLastUpdatedShiftId(record.id);
+      }
+
+      if (
+        isShiftInVisibleWeek(record.startTime) ||
+        (record.id ? scheduleShiftIds.has(record.id) : false)
+      ) {
+        queueRefetch();
+      }
     },
   });
 
-  // Listen for assignment changes — this is the concurrent conflict detection
-  // If Manager A assigns Sarah, Manager B sees Sarah's cell fill in real-time
   useRealtimeSubscription({
     table: "ShiftAssignment",
     event: "*",
-    onchange: () => {
-      fetchSchedule();
+    onchange: (payload) => {
+      const record = (payload.new || payload.old) as { shiftId?: string } | null;
+      if (!record?.shiftId) return;
+
+      if (scheduleShiftIds.has(record.shiftId)) {
+        queueRefetch();
+      }
     },
   });
 

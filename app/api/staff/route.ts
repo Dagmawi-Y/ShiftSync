@@ -1,6 +1,6 @@
 // app/api/staff/route.ts
 import { prisma } from "@/lib/prisma";
-import { getAuthProfile, ok, err } from "@/lib/apiUtils";
+import { getAuthProfile, managerOwnsLocation, ok, err } from "@/lib/apiUtils";
 import { NextRequest } from "next/server";
 
 // GET /api/staff?locationId=xxx&skill=xxx
@@ -19,6 +19,15 @@ export async function GET(req: NextRequest) {
     if (!locationId || !skill) {
       return err("Forbidden", 403);
     }
+  }
+
+  if (profile.role === "MANAGER") {
+    if (!locationId) {
+      return err("locationId is required for managers", 400);
+    }
+
+    const owns = await managerOwnsLocation(profile.id, locationId);
+    if (!owns) return err("Forbidden", 403);
   }
 
   const staff = await prisma.profile.findMany({
