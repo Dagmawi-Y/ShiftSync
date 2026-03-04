@@ -43,10 +43,15 @@ export function AvailableShifts({ profileId, onPickedUp }: AvailableShiftsProps)
       try {
         // Fetch drop requests that are pending manager approval
         // (isDrop with PENDING_MANAGER status — these are available for pickup)
-        const res = await fetch("/api/swaps?status=PENDING_MANAGER");
+        const res = await fetch(
+          "/api/swaps?status=PENDING_MANAGER&scope=available-drops"
+        );
         if (!res.ok) throw new Error();
         const data = await res.json();
-        const swaps = data.swaps ?? data ?? [];
+        const swaps = data.swaps ?? data.data ?? data ?? [];
+        if (!Array.isArray(swaps)) {
+          throw new Error("Unexpected swaps response");
+        }
         // Show only drops (isDrop=true) that current user did NOT initiate
         const available = swaps.filter(
           (s: DropShift & { isDrop: boolean; initiatorId: string }) =>

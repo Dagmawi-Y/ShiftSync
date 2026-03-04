@@ -8,11 +8,18 @@ import { NextRequest } from "next/server";
 export async function GET(req: NextRequest) {
   const profile = await getAuthProfile();
   if (!profile) return err("Unauthorized", 401);
-  if (profile.role === "STAFF") return err("Forbidden", 403);
 
   const { searchParams } = new URL(req.url);
   const locationId = searchParams.get("locationId");
   const skill = searchParams.get("skill");
+
+  if (profile.role === "STAFF") {
+    // Staff can only use this endpoint for swap colleague lookup,
+    // which must be constrained to both a required skill and location.
+    if (!locationId || !skill) {
+      return err("Forbidden", 403);
+    }
+  }
 
   const staff = await prisma.profile.findMany({
     where: {

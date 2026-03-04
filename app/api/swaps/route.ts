@@ -145,14 +145,22 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status");
+  const scope = searchParams.get("scope");
 
   let where: object = {};
 
   if (profile.role === "STAFF") {
-    // Staff see swaps they initiated or received
-    where = {
-      OR: [{ initiatorId: profile.id }, { receiverId: profile.id }],
-    };
+    if (scope === "available-drops") {
+      where = {
+        isDrop: true,
+        initiatorId: { not: profile.id },
+      };
+    } else {
+      // Staff see swaps they initiated or received
+      where = {
+        OR: [{ initiatorId: profile.id }, { receiverId: profile.id }],
+      };
+    }
   } else if (profile.role === "MANAGER") {
     // Managers see swaps for shifts at their locations
     const locations = await prisma.locationManager.findMany({

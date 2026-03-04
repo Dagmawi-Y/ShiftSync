@@ -16,7 +16,7 @@ interface ShiftForSwap {
   startTime: string;
   endTime: string;
   requiredSkill: string;
-  location: { name: string };
+  location: { id: string; name: string };
   assignments: { profileId: string; profile: { id: string; name: string } }[];
 }
 
@@ -56,8 +56,12 @@ export function SwapRequestForm({ profileId, onSubmitted }: SwapRequestFormProps
         const res = await fetch(`/api/shifts?weekStart=${weekStart}`);
         if (!res.ok) throw new Error();
         const data = await res.json();
+        const allShifts = data.shifts ?? data.data ?? data ?? [];
+        if (!Array.isArray(allShifts)) {
+          throw new Error("Unexpected shifts response");
+        }
         // Filter to only shifts where the current user is assigned
-        const myShifts = (data.shifts ?? data ?? []).filter(
+        const myShifts = allShifts.filter(
           (s: ShiftForSwap) =>
             s.assignments?.some((a) => a.profileId === profileId)
         );
@@ -88,7 +92,9 @@ export function SwapRequestForm({ profileId, onSubmitted }: SwapRequestFormProps
       setLoadingColleagues(true);
       try {
         const skill = selectedShift!.requiredSkill;
-        const res = await fetch(`/api/staff?skill=${skill}`);
+        const locationId = selectedShift!.location.id;
+        const params = new URLSearchParams({ skill, locationId });
+        const res = await fetch(`/api/staff?${params.toString()}`);
         if (!res.ok) throw new Error();
         const data = await res.json();
         // Exclude self
