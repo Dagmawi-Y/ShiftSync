@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRealtimeSubscription } from "./useRealtimeSubscription";
 
 interface ConflictAlert {
@@ -34,10 +34,10 @@ export function useConflictDetection(watchedStaffIds: string[]) {
 
   // Keep a ref of watched IDs so the subscription callback
   // always has the latest value without re-subscribing
-  const [watchedSet, setWatchedSet] = useState(new Set(watchedStaffIds));
+  const watchedRef = useRef(new Set(watchedStaffIds));
 
   useEffect(() => {
-    setWatchedSet(new Set(watchedStaffIds));
+    watchedRef.current = new Set(watchedStaffIds);
   }, [watchedStaffIds]);
 
   useRealtimeSubscription({
@@ -49,7 +49,7 @@ export function useConflictDetection(watchedStaffIds: string[]) {
         shiftId: string;
       };
 
-      if (watchedSet.has(newAssignment.profileId)) {
+      if (watchedRef.current.has(newAssignment.profileId)) {
         setConflicts((prev) => [
           ...prev,
           {
