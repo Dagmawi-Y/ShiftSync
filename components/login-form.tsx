@@ -21,7 +21,9 @@ const DemoAccountDrawer = dynamic(
   () => import("@/components/demo-account-drawer"),
   { ssr: false }
 );
-import { DEMO_PASSWORD } from "@/components/demo-account-drawer";
+import {
+  getDemoPasswordByEmail,
+} from "@/components/demo-account-drawer";
 
 type Role = "ADMIN" | "MANAGER" | "STAFF";
 
@@ -189,7 +191,7 @@ export function LoginForm({
           selectedEmail={email}
           onSelect={(selectedEmail) => {
             setEmail(selectedEmail);
-            setPassword(DEMO_PASSWORD);
+            setPassword(getDemoPasswordByEmail(selectedEmail));
             setError(null);
           }}
         />

@@ -256,6 +256,15 @@ function DrawerViewRenderer({
 // ─── Main export ────────────────────────────────────────────
 
 export const DEMO_PASSWORD = "ShiftSync2026!";
+export const ADMIN_DEMO_PASSWORD = "supadmin";
+
+const ADMIN_DEMO_EMAILS = new Set(
+  DEMO_GROUPS.find((group) => group.role === "ADMIN")?.accounts.map((account) => account.email) ?? []
+);
+
+export function getDemoPasswordByEmail(email: string): string {
+  return ADMIN_DEMO_EMAILS.has(email) ? ADMIN_DEMO_PASSWORD : DEMO_PASSWORD;
+}
 
 export default function DemoAccountDrawer({
   selectedEmail,
