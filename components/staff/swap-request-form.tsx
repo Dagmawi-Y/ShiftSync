@@ -97,8 +97,12 @@ export function SwapRequestForm({ profileId, onSubmitted }: SwapRequestFormProps
         const res = await fetch(`/api/staff?${params.toString()}`);
         if (!res.ok) throw new Error();
         const data = await res.json();
+        const staff = data.staff ?? data.data ?? data ?? [];
+        if (!Array.isArray(staff)) {
+          throw new Error("Unexpected staff response");
+        }
         // Exclude self
-        const others = (data.staff ?? data ?? []).filter(
+        const others = staff.filter(
           (s: StaffMember) => s.id !== profileId
         );
         setColleagues(others);
