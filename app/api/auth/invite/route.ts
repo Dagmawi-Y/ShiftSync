@@ -51,10 +51,13 @@ export async function POST(req: NextRequest) {
 
   // Create the Supabase auth user via invite (sends magic link email)
   const supabase = createAdminClient();
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  const inviteRedirectTo = `${siteUrl}/confirm?next=/invite-accept`;
+
   const { data: inviteData, error: inviteError } =
     await supabase.auth.admin.inviteUserByEmail(email, {
       data: { name, role },
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/invite-accept`,
+      redirectTo: inviteRedirectTo,
     });
 
   if (inviteError) {
